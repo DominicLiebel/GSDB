@@ -179,7 +179,20 @@ class ModelTracker:
 
     
     def update(self, trial_number: int, model_name: str, val_loss: float, 
-               model: torch.nn.Module, params: Dict, metrics: Dict) -> bool:
+            model: torch.nn.Module, params: Dict, metrics: Dict) -> bool:
+        """Update the best model tracker if a better model is found.
+        
+        Args:
+            trial_number: Current trial number
+            model_name: Model architecture name
+            val_loss: Validation loss
+            model: Model to save if better than current best
+            params: Hyperparameters used
+            metrics: Validation metrics
+            
+        Returns:
+            bool: True if model was updated, False otherwise
+        """
         if val_loss < self.best_models[model_name]['val_loss']:
             # Calculate additional metrics using metrics_utils
             all_metrics = metrics_utils.calculate_basic_metrics(
@@ -190,13 +203,16 @@ class ModelTracker:
             
             model_filename = f"{self.task}_{model_name}.pt"
             
-            # Save model state with expanded metrics
+            # Save model state with standardized format matching train.py
             save_dict = {
+                'epoch': -1,  # Placeholder since we don't track epochs in tuning
                 'model_state_dict': model.state_dict(),
-                'trial_number': trial_number,
-                'val_loss': val_loss,
-                'params': params,
+                'optimizer_state_dict': None,  # Placeholder for consistent format
                 'metrics': all_metrics,
+                'config': params,  # Match config key in train.py
+                # Additional tuning-specific information
+                'trial_number': trial_number,
+                'val_loss': val_loss
             }
             
             torch.save(save_dict, self.save_dir / model_filename)
@@ -674,17 +690,24 @@ def train_final_model(trial: optuna.trial.FrozenTrial, args: argparse.Namespace,
             f"Val F1: {val_metrics['f1']:.2f}%, Val AUC: {val_metrics['auc']:.2f}%"
         )
         
-        # Save best model
+        # Save best model using the standardized format
         if val_metrics['loss'] < best_val_loss:
             best_val_loss = val_metrics['loss']
-            training_utils.save_checkpoint(
-                model=model,
-                optimizer=optimizer,
-                epoch=epoch,
-                metrics=val_metrics,
-                config=config,
-                filepath=str(final_model_dir / 'best_model.pt')
-            )
+            
+            # Create a save dictionary that matches the standard format
+            save_dict = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'metrics': val_metrics,
+                'config': config,
+                # Add tuning-specific information
+                'trial_number': trial.number,
+                'val_loss': val_metrics['loss']
+            }
+            
+            torch.save(save_dict, final_model_dir / 'best_model.pt')
+            logging.info(f"Saved best model with validation loss: {val_metrics['loss']:.4f}")
     
     # Save training history
     with open(final_model_dir / 'training_history.json', 'w') as f:

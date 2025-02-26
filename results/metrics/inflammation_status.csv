@@ -167,7 +167,7 @@ slide_name,slide_id,patient_id,scanner_id,stain,inflammation_status
 331_265_2_HE,331,265,2,HE,noninflamed
 148_122_1_HE,148,122,1,HE,noninflamed
 235_209_1_HE,235,209,1,HE,noninflamed
-99_73_1_HE,99,73,1,HE,
+99_73_1_HE,99,73,1,HE,noninflamed
 90_65_1_MG,90,65,1,MG,other
 334_266_2_HE,334,266,2,HE,noninflamed
 65_47_1_HE,65,47,1,HE,inflamed

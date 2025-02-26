@@ -6,7 +6,7 @@
       "objectType": "annotation",
       "classification": {
         "tissue_type": "intermediate",
-        "inflammation_type": "noninflamed"
+        "inflammation_status": "noninflamed"
       },
       "cluster_id": 4
     },
@@ -513,7 +513,7 @@
       "objectType": "annotation",
       "classification": {
         "tissue_type": "intermediate",
-        "inflammation_type": "noninflamed"
+        "inflammation_status": "noninflamed"
       },
       "cluster_id": 3
     },
@@ -992,7 +992,7 @@
       "objectType": "annotation",
       "classification": {
         "tissue_type": "intermediate",
-        "inflammation_type": "noninflamed"
+        "inflammation_status": "noninflamed"
       },
       "cluster_id": 3
     },
@@ -1411,7 +1411,7 @@
       "objectType": "annotation",
       "classification": {
         "tissue_type": "intermediate",
-        "inflammation_type": "noninflamed"
+        "inflammation_status": "noninflamed"
       },
       "cluster_id": 2
     },
@@ -1906,7 +1906,7 @@
       "objectType": "annotation",
       "classification": {
         "tissue_type": "intermediate",
-        "inflammation_type": "noninflamed"
+        "inflammation_status": "noninflamed"
       },
       "cluster_id": 2
     },
@@ -2385,7 +2385,7 @@
       "objectType": "annotation",
       "classification": {
         "tissue_type": "intermediate",
-        "inflammation_type": "noninflamed"
+        "inflammation_status": "noninflamed"
       },
       "cluster_id": 4
     },
@@ -3048,7 +3048,7 @@
       "objectType": "annotation",
       "classification": {
         "tissue_type": "intermediate",
-        "inflammation_type": "noninflamed"
+        "inflammation_status": "noninflamed"
       },
       "cluster_id": 1
     },
@@ -3791,7 +3791,7 @@
       "objectType": "annotation",
       "classification": {
         "tissue_type": "intermediate",
-        "inflammation_type": "noninflamed"
+        "inflammation_status": "noninflamed"
       },
       "cluster_id": 1
     },

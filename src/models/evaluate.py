@@ -496,7 +496,19 @@ def setup_logging(output_dir: Path) -> None:
     logging.info(f"Logging configured. Log file: {output_dir / 'evaluation.log'}")
 
 def load_model(model_path: Path, device: torch.device, architecture: str = "gigapath") -> nn.Module:
-    """Load model based on specified architecture with support for both PyTorch and pickle formats."""
+    """Load model based on specified architecture with support for both PyTorch and pickle formats.
+    
+    Args:
+        model_path: Path to trained model
+        device: Device to load the model onto
+        architecture: Model architecture type
+        
+    Returns:
+        nn.Module: Loaded model
+        
+    Raises:
+        ValueError: If unsupported architecture or model format
+    """
     try:
         # Initialize the model architecture
         if architecture == "gigapath":
@@ -535,13 +547,29 @@ def load_model(model_path: Path, device: torch.device, architecture: str = "giga
                 
         else:  # Default PyTorch loading (.pt, .pth)
             logging.info(f"Loading PyTorch model from {model_path}")
-            state_dict = torch.load(model_path, map_location=device, weights_only=False)
+            checkpoint = torch.load(model_path, map_location=device)
             
-            # Extract the model weights if they're in a nested dictionary
-            if isinstance(state_dict, dict) and 'model_state_dict' in state_dict:
-                model.load_state_dict(state_dict['model_state_dict'], strict=False)
+            # Extract the model weights using standardized keys
+            if isinstance(checkpoint, dict):
+                if 'model_state_dict' in checkpoint:
+                    # Standard format (from both train.py and tune.py)
+                    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+                    
+                    # If model comes from tuning, log relevant info
+                    if 'trial_number' in checkpoint:
+                        logging.info(f"Loaded model from trial {checkpoint['trial_number']}")
+                    if 'val_loss' in checkpoint:
+                        logging.info(f"Validation loss: {checkpoint['val_loss']:.4f}")
+                        
+                    # If model comes from training, log relevant info
+                    if 'epoch' in checkpoint and checkpoint['epoch'] != -1:
+                        logging.info(f"Trained for {checkpoint['epoch']} epochs")
+                else:
+                    # Try to load the dictionary as a direct state dict
+                    logging.warning("No 'model_state_dict' key found, attempting to load as direct state dict")
+                    model.load_state_dict(checkpoint, strict=False)
             else:
-                model.load_state_dict(state_dict, strict=False)
+                raise ValueError(f"Unsupported model format. Expected dictionary with 'model_state_dict'.")
         
         # Set model name attribute if not already present
         if not hasattr(model, 'model_name'):
