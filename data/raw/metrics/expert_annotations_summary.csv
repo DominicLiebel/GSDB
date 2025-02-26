@@ -1,0 +1,339 @@
+NEW_ID,EXPERT_ANNOTATION
+1_1_1_HE,links C; rechts C
+2_2_1_HE,C / C 
+3_2_1_MG,C / C 
+4_2_1_PAS,C / C 
+5_3_1_HE,beide Partikel Antrum
+7_5_1_HE,C / C (Drüsenkörperzyste)
+8_6_1_HE,A / A aber zu wenig E andere Kategorie – Test?
+9_7_1_HE,3x links A; 1x rechts C
+10_7_1_MG,3x links A; 1x rechts C
+11_7_1_PAS,3x links A; 1x rechts C
+12_8_1_HE,fehlt bei euch: 2 Partikel Corpus eines Intermediärzone
+14_10_1_HE,C / C (Drüsenkörperzyste)
+15_11_1_HE,links A; links mitte unten A; oben Mitte C; rechts C
+16_12_1_HE,2 x oben A; 2x unten C (mit Drüsenkörperzysten)
+17_12_1_MG,2 x unten A; 2x oben C (mit Drüsenkörperzysten)
+18_12_1_PAS,2 x unten A; 2x oben C (mit Drüsenkörperzysten)
+19_13_1_HE,beide Partikel Corpus 
+21_15_1_HE,C / C (Pseudohypertrophie)
+22_16_1_HE,links groß C; rechts klein A
+23_17_1_HE,links oben + rechts unten C; rechts oben + links unten A
+24_17_1_MG,links oben + rechts unten C; rechts oben + links unten A
+25_17_1_PAS,links oben + rechts unten C; rechts oben + links unten A
+27_19_1_HE,Falsche Gruppe; Typ B-Gastritis; alles A
+28_20_1_HE,C / C  (Pseudohypertrophie)
+29_21_1_HE,C zu wenig E; andere Kategorie – Test?
+30_22_1_HE,links C; rechts A (mit Drüsenkörperzysten)
+31_22_1_MG,links A; rechts C (mit Drüsenkörperzysten)
+32_22_1_PAS,links C; rechts A (mit Drüsenkörperzysten)
+33_23_1_HE,beider Partikel Corpus 
+35_25_1_HE,C / C (Drüsenkörperzyste)
+36_26_1_HE,links IM-Zone; rechts C
+37_27_1_HE,Alles A
+38_27_1_MG,Alles A
+39_27_1_PAS,Alles A
+40_28_1_HE,alle Partikel Corpus   
+42_30_1_HE,oben oberflächlich; nicht sicher klassifizierbar; unten C (Drüsenkörperzyste)
+43_31_1_HE,oben 2x A; unten C (viel E etwas schwer beurteilbar)
+44_32_1_HE,Alles A
+45_32_1_MG,Alles A
+46_32_1_PAS,Alles A
+47_33_1_HE,Corpus (großes Partikel) Antrum (kleines Partikel)
+49_35_1_HE,teilweise unscharf! Cave; oberste Stufe anders orientiert!
+50_36_1_HE,großes C kleines A - ok
+51_37_1_HE,Alles A
+52_37_1_MG,Alles A
+53_37_1_PAS,Alles A
+54_38_1_HE,Corpus
+56_40_1_HE,C / C (Pseudohypertrophie)
+57_41_1_HE,2 x A
+58_42_1_HE,Alles A
+59_42_1_MG,Alles A
+60_42_1_PAS,Alles A
+61_43_1_HE,Corpus
+63_45_1_HE,C (Pseudohypertrophie)
+64_46_1_HE,oben A; Mitte A; unten IM
+65_47_1_HE,Alles A
+66_47_1_MG,Alles A
+67_47_1_PAS,Alles A
+68_48_1_HE,Corpus
+70_50_1_HE,C (Pseudohypertrophie)
+71_51_1_HE,links A; rechts A; Mitte C
+72_52_1_HE,Alles A
+73_52_1_MG,Alles A
+74_52_1_PAS,Alles A
+75_53_1_HE,Corpus
+77_55_1_HE,C / C (Pseudohypertrophie)
+78_56_1_HE,C NEU
+79_57_1_HE,beides C mit wenig E - eher als Testprobe
+80_57_1_MG,beides C mit wenig E - eher als Testprobe
+81_57_1_PAS,beides C mit wenig E - eher als Testprobe
+82_58_1_HE,Antrum
+84_60_1_HE,C / C / C 
+85_61_1_HE,unten links C / großes mittig unten C / oben rechts A / oberes kleines eher links A (+ intestinale Metaplasie) NEU
+86_62_1_HE,Speiseröhrenschleimhaut - Gruppe nicht klassifizierbar
+87_63_1_HE,Corpus
+89_65_1_HE,C (Drüsenkörperzyste)
+90_65_1_MG,C (Drüsenkörperzyste)
+91_65_1_PAS,C (Drüsenkörperzyste)
+92_66_1_HE,Vermutlich A / A (oberflächlich) und leider unscharf NEU
+93_67_1_HE,links Corpus; Mitte oben IMZone; Mitte unten A; rechts mittig A etwas unscharf
+94_68_1_HE,große hakenförmiges Partikel Corpus; kleines Partikel Intermediärzone
+97_71_1_HE,oben C unten A
+98_72_1_HE,A / A
+99_73_1_HE,Intermediär Intermediär
+101_75_1_PAS,Magenvollwandresektat aus dem Corpus (keine Biopsie)
+102_76_1_HE,oben Mitte A; links C; rechts C; unten wenig; nicht sicher klass
+103_77_1_HE,rechts oben A; rechts unten IMZone; Mitte A; links oben C links unten C
+104_78_1_HE,großes Partikel Corpus; kleines nicht sicher klassifizierbar; vermutlich Corpus
+106_80_1_PAS,Links Antrum; rechts Corpus mit Drüsenkörperzysten
+107_81_1_HE,oben A; unten A 
+108_82_1_HE,beides Corpus
+110_84_1_HE,C; C; C
+111_85_1_HE,links Corpus; rechts Antrum
+112_86_1_HE,ein Partikel Corpus; eines Intermdiärzone
+113_87_1_HE,A; A
+114_88_1_HE,ganz oben A; Mitte eher links C; Mitte eher rechts C; ganz unten leicht links A etwas unscharf
+115_89_1_HE,beide Partikel Corpus   
+116_90_1_HE,A; A
+117_91_1_HE,siehe Bild
+118_92_1_HE,linkes Partikel Corpus; Mitte Antrum; rechtes Partikel Corpus
+119_93_1_HE,vermutlich oben C; unten links A; unten rechts IM-zone
+120_94_1_HE,alles A
+121_95_1_HE,linkes und rechtes Partikel Antrum; die beiden queren in der Mitte Corpus
+122_96_1_HE,C; C 
+123_97_1_HE,siehe Bild
+124_98_1_HE,gerades Partikel Corpus; gebogenes Partikel Antrum
+125_99_1_HE,oberstes (mittig) Antrum; großes rechts Intermediärzone; kleines mittig (weiter unten) Antrum; größeres ganz unten Intermediärzone; kleinstes ganz links Corpus
+126_100_1_HE,links oben A; links unten A; rechts oben C; rechts unten C teilweise unscharf
+127_101_1_HE,3x Corpus; 2x Intermediärzone (außen)
+128_102_1_HE,links oben groß C; links unten klein C (vermutlich; klein; viel E); Mitte A; rechts A
+129_103_1_HE,links C; Mitte C; rechts oben A; rechts unten A
+130_104_1_HE,Intermediärzone
+131_105_1_HE,unscharf! A; A
+132_106_1_HE,links C; rechts C unten links A
+133_107_1_HE,Corpus
+134_108_1_HE,A; A teilweise unscharf
+135_109_1_HE,oben rechts C; oben links C; unten rechts A; unten links A; leicht unscharf
+136_110_1_HE,Intermediärzone / Intermediärzone
+137_111_1_HE,C
+138_112_1_HE,rechts oben A; rechts unten A; links oben C; links unten C; mittig unten A; mittig oben kleines Partikel C
+139_113_1_HE,Corpus / Corpus
+140_114_1_HE,links oben A; links mitte klein nicht klass; links unten C; rechts C
+141_115_1_HE,oben rechts A; oben links A; rechts mittig C; rechts unten C
+142_116_1_HE,Antrum / Antrum / Corpus  (oben rechts)
+143_117_1_HE,alles A (mit fokaler intestinaler Metaplasie) 
+144_118_1_HE,oben Mitte A; rechts A; links C
+145_119_1_HE,Corpus / Corpus
+146_120_1_HE,A
+147_121_1_HE,Alles A
+148_122_1_HE,Corpus / Corpus (die beiden oben) Intermediärzone (unten)
+149_123_1_HE,C
+150_124_1_HE,oben Mitte C; rechts C; links A unten A
+151_125_1_HE,Corpus (links) / Intermediärzone (rechts)
+152_126_1_HE,2 x oben A; unten C
+153_127_1_HE,rechts C; Mitte A; links unten A; leicht unscharf
+154_128_1_HE,Antrum / Antrum
+155_129_1_HE,links A; rechts C
+156_130_1_HE,kleines oben C; alle anderen A
+157_131_1_HE,Corpus / Corpus
+158_132_1_HE,A; A
+159_133_1_HE,rechtes langes C; das rechts mittig lang C; die kleinen alle A
+160_134_1_HE,Corpus (oben u-förmig) / Antrum (unten)
+161_135_1_HE,winziges oben vermutlich A; 2 x groß oben C
+162_136_1_HE,ganz links A; mittig links A; Mitte oben C; Mitte unten C; ganz rechts C
+163_137_1_HE,Corpus (c-förmig; unten) / Intermediär (oben)
+164_138_1_HE,ganz oben C; alle anderen A
+165_139_1_HE,Antrum
+166_140_1_HE,Links oben A; links unten C; kurzes mittig C; langes rechts A
+167_141_1_HE,teilweise oberflächlich aber wahrscheinlich alles A
+168_142_1_HE,Corpus / Corpus
+169_143_1_HE,IM-Zone großes s-förmiges in der Mitte; Antrum ganz oben links; Antrum oben dazwischen; die beiden kleinen unten rechts und links oberflächlich erfasst; nicht sicher klassifizierbar; vermutlich A
+170_144_1_HE,ganz unten Mitte IM-Zone; alles andere A
+171_145_1_HE,Oben Corpus; unten NK. Das untere Partikel wurde nur ganz oberflächlich angeschnitten; daher ist bei diesem nicht zu unterscheiden ob A oder K; somit nicht klassifizierbar NK.
+172_146_1_HE,oben C; unten 2 x A
+173_147_1_HE,IM-Zone
+174_148_1_HE,Corpus / Corpus (Mitte oben und unten) / Antrum / Antrum / Antrum (links unten und 2 x rechts)
+175_149_1_HE,oben 2 x C; mitte links C; Mitte rechts 2 x A; winziges unten rechts C
+176_150_1_HE,oben li A; unten li C; oben Mitte C; unten Mitte A; ganz re C
+177_151_1_HE,oberflächlich; nicht sicher beurteilbar; + wahrscheinlich Corpus
+178_152_1_HE,A
+179_153_1_HE,links C; rechts A; teilweise unscharf
+180_154_1_HE,Corpus / Corpus
+181_155_1_HE,unscharf; vermutlich C
+182_156_1_HE,vermutlich alles A; unscharf!
+183_157_1_HE,Antrum / Antrum
+184_158_1_HE,vermutlich C aber kleine Probe; nicht so schön…
+185_159_1_HE,A
+186_160_1_HE,Corpus / Corpus
+187_161_1_HE,A
+188_162_1_HE,Corpus / Corpus 
+189_163_1_HE,3 x A; unten Corpus + intestinale Metaplasie 
+190_164_1_HE,Antrum
+191_165_1_HE,Speiseröhrenschleimhaut; andere Gruppe nicht klassifizierbar
+192_166_1_HE,Corpus / Corpus
+193_167_1_HE,unten links C; alle anderen A
+194_168_1_HE,Corpus / Corpus
+195_169_1_HE,links A; rechts oben C; rechts unten C
+196_170_1_HE,Corpus / Corpus
+197_171_1_HE,ganz links C; ganz rechts C; Mitte oben und Mitte unten A
+198_172_1_HE,oberes gebogenes Corpus; unteres gebogenes und gerades Antrum
+199_173_1_HE,unten Mitte C; alle anderen A
+200_174_1_HE,Antrum
+201_175_1_HE,rechts C; links; Mitte IM-Zone
+202_176_1_HE,Corpus
+203_177_1_HE,rechts oben C; rechts unten C; Mitte A; links A
+204_178_1_HE,Corpus
+205_179_1_HE,unten C; links Mitte C; 3 x oben A;
+207_181_1_PAS,Alles Antrum
+208_182_1_HE,Corpus
+209_183_1_PAS,siehe Bild
+210_184_1_HE,Corpus
+211_185_1_PAS,siehe Bild
+212_186_1_HE,linken drei Partikel Antrum; rechte drei Partikel Corpus
+213_187_1_HE,Partikel rechte Seite C; Partikel linke Seite A
+214_188_1_HE,Corpus / Corpus
+215_189_1_HE,Partikel rechte Seite A; Partikel linke Seite C
+216_190_1_HE,Corpus 
+217_191_1_HE,ganz oben C; links mittig C; eher rechts Mittig A; unten A 
+218_192_1_HE,Corpus / Corpus
+219_193_1_HE,das oberste Mittig C; die kleineren Mittig C; größeres unten A; rechts A; links A
+220_194_1_HE,Corpus
+221_195_1_HE,Antrum / Antrum
+222_196_1_HE,Corpus / Corpus
+224_198_1_HE,Antrum / Intermediär / Corpus (Reihenfolge von links (gerades Partikel) nach rechts (uförmiges Partikel); 
+225_199_1_HE,Corpus
+226_200_1_HE,Corpus (C förmig gebogenes P.) / Antrum (gerades P.)
+227_201_1_HE,Corpus (langes P.) / Intermediär (kurzes P.)
+228_202_1_HE,Intermediate (links; dünn) / Corpus (rechts dick)
+229_203_1_HE,Corpus
+230_204_1_HE,Corpus / Corpus (cave Drüsenkörperzysten) besser in der Gruppe sonstiges
+231_205_1_HE,Corpus / Corpus (2x dicke lange links) Antrum / Antrum (2x dünne eher senkrechte rechts)
+232_206_1_HE,Immer noch teilweise unscharf langes dünnes mitte Antrum; Rest Corpus
+233_207_1_HE,sehr viele Partikel; das machen wir mal; wenn ihr da seid
+234_208_1_HE,Corpus (langes linkes) / Intermediär (rechtes kurzes)
+235_209_1_HE,Corpus / Corpus
+236_210_1_HE,Corpus
+237_211_1_HE,Corpus / Corpus
+238_212_1_HE,Corpus / Corpus
+240_214_1_HE,Corpus
+241_215_1_HE,Corpus
+242_216_1_HE,Antrum
+244_218_1_HE,Corpus
+245_219_1_HE,Corpus
+246_220_1_HE,Corpus
+247_221_1_HE,Corpus
+248_222_1_HE,A / A / IM / C / C (beim neu eingescanten Bild link 2x Antrum; Oben mitte Corpus; Unten Mitte IM; rechts Corpus
+249_223_1_HE,siehe Bild
+250_224_1_HE,alles antrum; unten links nicht definierbar
+251_225_1_HE,Corpus
+252_226_1_HE,Corpus
+253_227_1_HE,Antrum
+254_228_1_HE,Corpus / Intermediär
+255_229_1_HE,Intermediär
+256_230_1_HE,Corpus
+257_231_1_HE,unscharf bis auf letzte Stufe
+258_232_1_HE,Intermediärzone
+259_233_1_HE,linkes langes gebogenes Corpus / kurzes gerades Antrum
+260_234_1_MG,Corpus
+261_235_1_HE,Corpus
+262_236_1_HE,teilweise unscharf Corpus? / IM?
+263_237_1_HE,siehe Bild
+264_238_1_HE,links Corpus oben Corpus rechts intermediär
+265_239_1_PAS,Antrum mit leichten Veränderungen von Typ C
+266_240_1_PAS,beides Antrum und auch leicht Richtung Typ C
+267_241_1_PAS,beides Antrum weitgehend ohne Entzündung
+268_242_1_PAS,beide Partikel als Antrum klassifizieren mit minimaler Entzündung
+269_243_1_PAS,siehe Bild
+270_244_1_PAS,links Corpus; rechts Antrum; entzündungsfrei
+271_245_2_HE,siehe Bild
+272_245_2_PAS,siehe Bild
+273_245_2_MG,siehe Bild
+274_246_2_HE,beides Antrum
+275_246_2_PAS,beides Antrum
+276_246_2_MG,beides Antrum
+277_247_2_HE,siehe Bild
+278_247_2_PAS,siehe Bild
+279_247_2_MG,siehe Bild
+280_248_2_HE,siehe Bild
+281_248_2_PAS,siehe Bild
+282_248_2_MG,siehe Bild
+283_249_2_HE,siehe Bild
+284_249_2_PAS,siehe Bild
+285_249_2_MG,siehe Bild
+286_250_2_HE,siehe Bild
+287_250_2_PAS,siehe Bild
+288_250_2_MG,siehe Bild
+289_251_2_HE,siehe Bild
+290_251_2_PAS,siehe Bild
+291_251_2_MG,siehe Bild
+292_252_2_HE,alles Antrum; Cave fokale intestinale Metaplasie
+293_252_2_PAS,alles Antrum; Cave fokale intestinale Metaplasie
+294_252_2_MG,alles Antrum; Cave fokale intestinale Metaplasie
+295_253_2_HE,siehe Bild
+296_253_2_PAS,siehe Bild
+297_253_2_MG,siehe Bild
+298_254_2_HE,siehe Bild
+299_254_2_PAS,siehe Bild
+300_254_2_MG,siehe Bild
+301_255_2_HE,siehe Bild
+302_255_2_PAS,siehe Bild
+303_255_2_MG,siehe Bild
+304_256_2_HE,siehe Bild
+305_256_2_PAS,siehe Bild
+306_256_2_MG,siehe Bild
+307_257_2_HE,beides Antrum
+308_257_2_PAS,beides Antrum
+309_257_2_MG,beides Antrum
+310_258_2_HE,beides Corpus
+311_258_2_PAS,beides Corpus
+312_258_2_MG,beides Corpus
+313_259_2_HE,siehe Bild
+314_259_2_PAS,siehe Bild
+315_259_2_MG,siehe Bild
+316_260_2_HE,beide Intermediärzone
+317_260_2_PAS,beide Intermediärzone
+318_260_2_MG,beide Intermediärzone
+319_261_2_HE,beide Antrum
+320_261_2_PAS,beide Antrum
+321_261_2_MG,beide Antrum
+322_262_2_HE,alle Antrum
+323_262_2_PAS,alle Antrum
+324_262_2_MG,alle Antrum
+325_263_2_HE,vermutlich beides Intermediärzone
+326_263_2_PAS,vermutlich beides Intermediärzone
+327_263_2_MG,vermutlich beides Intermediärzone
+328_264_2_HE,siehe Bild
+329_264_2_PAS,siehe Bild
+330_264_2_MG,siehe Bild
+331_265_2_HE,siehe Bild
+332_265_2_PAS,siehe Bild
+333_265_2_MG,siehe Bild
+334_266_2_HE,beides Antrum
+335_266_2_PAS,beides Antrum
+336_266_2_MG,beides Antrum
+337_267_2_HE,Antrum
+338_267_2_PAS,Antrum
+339_267_2_MG,Antrum
+340_268_2_HE,siehe Bild
+341_268_2_PAS,siehe Bild
+342_268_2_MG,siehe Bild
+343_269_2_HE,siehe Bild
+344_269_2_PAS,siehe Bild
+345_269_2_MG,siehe Bild
+346_270_2_HE,siehe Bild
+347_270_2_PAS,siehe Bild
+348_270_2_MG,siehe Bild
+349_271_2_HE,beides Antrum
+350_271_2_PAS,beides Antrum
+351_271_2_MG,beides Antrum
+352_272_2_HE,siehe Bild
+353_272_2_PAS,siehe Bild
+354_272_2_MG,siehe Bild
+355_273_2_HE,siehe Bild
+356_273_2_PAS,siehe Bild
+357_273_2_MG,siehe Bild
+358_274_2_HE,Corpus
+359_274_2_PAS,Corpus
+360_274_2_MG,Corpus

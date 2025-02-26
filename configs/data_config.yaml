@@ -1,0 +1,38 @@
+data:
+  common:
+    tile_size: 224
+    num_workers: 8
+    prefetch_factor: 2
+
+  task_specific:
+    inflammation:
+      batch_size: 64
+      num_workers: 8
+      prefetch_factor: 2
+    tissue:
+      batch_size: 32
+      num_workers: 6
+      prefetch_factor: 2
+
+augmentation:
+  inflammation:
+    train:
+      enabled: true
+      rotation_degrees: 30
+      random_affine: true
+      color_jitter: 0.2
+    validation:
+      enabled: false
+  tissue:
+    train:
+      enabled: true
+      rotation_degrees: 180
+      random_affine: false
+      color_jitter: 0.2
+    validation:
+      enabled: false
+
+preprocessing:
+  normalization:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]

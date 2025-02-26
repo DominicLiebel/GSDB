@@ -1,0 +1,11 @@
+data/raw/archive/2023_phoeflin
+data/raw/archive/2023_thempel
+data/raw/archive/slides
+data/raw/slides
+data/processed
+results/logs
+results/models
+x_AUXILIARIES
+src/models/__pycache__
+setup_project.py
+results/tables

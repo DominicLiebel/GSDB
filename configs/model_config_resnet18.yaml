@@ -1,0 +1,51 @@
+# ResNet18 Model config matching MA parameters
+model:
+  common:
+    device: "cuda:0"
+    seed: 42
+    deterministic: true
+  
+  architectures:
+    resnet18:
+      output_features: 512
+
+  inflammation:  # From MA thesis
+    architecture:
+      name: "resnet18"
+      pretrained: true
+      feature_extraction: false
+    optimizer:
+      name: "SGD"
+      learning_rate: 0.001  # As specified in MA
+      momentum: 0.9        # Standard SGD momentum
+    scheduler:
+      enabled: false       # "A learning rate scheduler was not employed"
+    epochs: 25            # "trained for 25 epochs"
+    batch_size: 128       # As specified in MA
+    early_stopping:
+      enabled: true
+      patience: 15        # "early stopping enforced after 15 epochs"
+    dropout_rate: 0.0     # Not mentioned in MA, set to 0
+    augmentation:
+      random_rotation: true
+      random_blur: true
+    
+  tissue:  # From MA thesis
+    architecture:
+      name: "resnet18"
+      pretrained: true
+      feature_extraction: false
+    optimizer:
+      name: "SGD"
+      learning_rate: 0.001  # As specified in MA
+      momentum: 0.9        # Standard SGD momentum
+    scheduler:
+      enabled: false       # "Implementing dropout, learning rate schedulers... did not further reduce the validation loss"
+    epochs: 60            # "60 epochs, with early stopping"
+    batch_size: 64        # As specified in MA
+    early_stopping:
+      enabled: true
+      patience: 15        # "early stopping implemented after 15 epochs"
+    dropout_rate: 0.0     # "Implementing dropout... did not further reduce the validation loss"
+    augmentation:         # "best combination of augmentation methods from section 8.1"
+      enabled: true

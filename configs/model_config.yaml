@@ -1,0 +1,55 @@
+common:
+  device: "cuda:0"
+  seed: 42
+  save_frequency: 5
+  mixed_precision: false
+  deterministic: true
+  architectures:
+    resnet18:
+      output_features: 512
+    convnext_large:
+      output_features: 1536
+    efficientnet_v2_l:
+      output_features: 1280
+    swin_v2_b:
+      output_features: 1024
+    maxvit_t:
+      output_features: 512
+
+inflammation:
+  architecture:
+    name: "convnext_large"
+    pretrained: true
+    feature_extraction: false
+  optimizer:
+    name: "AdamW"
+    learning_rate: 2.876893512794747e-05
+    weight_decay: 8.002895539239674e-06
+  scheduler:
+    enabled: true
+    name: "CosineAnnealingLR"
+    T_max: 50
+  epochs: 50
+  batch_size: 64
+  dropout_rate: 0.43274938178663674
+  gradient_clipping: 1.0
+  pos_weight: 0.7064547979898231
+
+tissue:
+  architecture:
+    name: "convnext_large"
+    pretrained: true
+    feature_extraction: false
+  optimizer:
+    name: "AdamW"
+    learning_rate: 0.00046478858862976407
+    weight_decay: 0.0001633878427789296
+  scheduler:
+    enabled: true
+    name: "ReduceLROnPlateau"
+    factor: 0.1
+    patience: 5
+  epochs: 50
+  batch_size: 32
+  dropout_rate: 0.06525706098123908
+  pos_weight: 0.5433579733090845

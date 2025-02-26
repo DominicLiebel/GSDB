@@ -1,0 +1,47 @@
+[
+  {
+    "id": 1,
+    "bounds": {
+      "left": 65965,
+      "right": 92473,
+      "top": 94371,
+      "bottom": 129614
+    }
+  },
+  {
+    "id": 2,
+    "bounds": {
+      "left": 32508,
+      "right": 53547,
+      "top": 109182,
+      "bottom": 141842
+    }
+  },
+  {
+    "id": 3,
+    "bounds": {
+      "left": 380,
+      "right": 19026,
+      "top": 114613,
+      "bottom": 148070
+    }
+  },
+  {
+    "id": 4,
+    "bounds": {
+      "left": 2506,
+      "right": 29356,
+      "top": 27571,
+      "bottom": 63269
+    }
+  },
+  {
+    "id": 5,
+    "bounds": {
+      "left": 17127,
+      "right": 46255,
+      "top": 9494,
+      "bottom": 30723
+    }
+  }
+]
