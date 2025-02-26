@@ -23,9 +23,17 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
-from dataset import HistologyDataset
-import metrics_utils
-from sklearn.metrics import confusion_matrix
+import sys
+
+# Add project root to path
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+# Local imports
+from src.models.dataset import HistologyDataset
+import src.models.metrics_utils as metrics_utils
+from src.config.paths import get_project_paths, add_path_args
 
 # Define GigaPathClassifier class
 class GigaPathClassifier(nn.Module):
@@ -579,7 +587,11 @@ def parse_args() -> argparse.Namespace:
     choices=['gigapath', 'resnet18', 'swin_v2_b', 'convnext_large'],
     default='gigapath',
     help='Model architecture'
-)
+    )
+    
+    # Add path arguments
+    parser = add_path_args(parser)
+    
     return parser.parse_args()
 
 def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path) -> None:

@@ -13,13 +13,32 @@ import logging
 from tqdm import tqdm
 from typing import Dict, List, Set
 from collections import defaultdict
+import argparse
+import sys
+
+# Add project root to path
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+# Import path configuration
+from src.config.paths import get_project_paths, add_path_args
 
 class DatasetProcessor:
-    def __init__(self, base_dir: Path = Path('/mnt/data/dliebel/2024_dliebel')):
-        self.base_dir = base_dir
-        self.annotations_dir = base_dir / 'data/raw/annotations'
-        self.tiles_dir = base_dir / 'data/processed/tiles'
-        self.metrics_dir = base_dir / 'results/metrics'
+    def __init__(self, paths=None):
+        """
+        Initialize DatasetProcessor with project paths.
+        
+        Args:
+            paths (Dict[str, Path], optional): Dictionary of project paths
+        """
+        if paths is None:
+            paths = get_project_paths()
+        
+        self.base_dir = paths["BASE_DIR"]
+        self.annotations_dir = paths["RAW_DIR"] / 'annotations'
+        self.tiles_dir = paths["PROCESSED_DIR"] / 'tiles'
+        self.metrics_dir = paths["METRICS_DIR"]
         self.metrics_dir.mkdir(parents=True, exist_ok=True)
         
         self.setup_logging()
@@ -287,10 +306,33 @@ class DatasetProcessor:
         logging.info(inflammation_df['scanner_id'].value_counts())
         logging.info("\nStain Distribution:")
         logging.info(inflammation_df['stain'].value_counts())
-
+        
 def main():
-    processor = DatasetProcessor()
-    processor.process_dataset()  # Generate single set of metadata files
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Process dataset and generate metadata files")
+    parser = add_path_args(parser)
+    args = parser.parse_args()
+    
+    # Get project paths with any overrides from command line
+    paths = get_project_paths(base_dir=args.base_dir)
+    
+    # Override specific directories if provided
+    if args.data_dir:
+        paths["DATA_DIR"] = args.data_dir
+        paths["RAW_DIR"] = args.data_dir / "raw"
+        paths["PROCESSED_DIR"] = args.data_dir / "processed" 
+    
+    if args.output_dir:
+        paths["RESULTS_DIR"] = args.output_dir
+        paths["METRICS_DIR"] = args.output_dir / "metrics"
+    
+    # Print paths
+    print("Project paths:")
+    for name, path in paths.items():
+        print(f"  {name}: {path}")
+    
+    processor = DatasetProcessor(paths)
+    processor.process_dataset()
 
 if __name__ == "__main__":
     main()

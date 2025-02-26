@@ -4,23 +4,24 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from PIL import Image
+import argparse
+import sys
 
-# Base directory configuration
-BASE_DIR = Path('/mnt/data/dliebel/2024_dliebel')
+# Add project root to path
+project_root = Path(__file__).resolve().parent.parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
 
-# Define common subdirectories
-DATA_DIR = BASE_DIR / 'data'
-SLIDES_DIR = DATA_DIR / 'raw/slides'
-DOWNSAMPLED_DIR = DATA_DIR / 'processed/downsized_slides'
-LOG_DIR = BASE_DIR / 'results/logs'
+# Import path configuration
+from src.config.paths import get_project_paths, add_path_args
 
 # Global constants
 DOWNSAMPLE = 16
 
-def setup_logging() -> None:
+def setup_logging(log_dir: Path) -> None:
     """Set up logging configuration with rotating file handler and enhanced formatting"""
-    LOG_DIR.mkdir(exist_ok=True, parents=True)
-    log_file = LOG_DIR / f'downsample_wsi_to_png_{datetime.now():%Y%m%d_%H%M%S}.log'
+    log_dir.mkdir(exist_ok=True, parents=True)
+    log_file = log_dir / f'downsample_wsi_to_png_{datetime.now():%Y%m%d_%H%M%S}.log'
     
     # Create a formatter with detailed information
     formatter = logging.Formatter(
@@ -97,18 +98,43 @@ def downsample_wsi(wsi_file: str, output_dir: str, downsample: int = DOWNSAMPLE)
         return False
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Downsample WSI files to PNG format")
+    parser = add_path_args(parser)
+    parser.add_argument("--downsample", type=int, default=DOWNSAMPLE, help="Downsample factor")
+    args = parser.parse_args()
+    
+    # Get project paths with any overrides from command line
+    paths = get_project_paths(base_dir=args.base_dir)
+    
+    # Override specific directories if provided
+    if args.data_dir:
+        paths["DATA_DIR"] = args.data_dir
+        paths["RAW_DIR"] = args.data_dir / "raw"
+        paths["PROCESSED_DIR"] = args.data_dir / "processed" 
+    
+    if args.output_dir:
+        paths["RESULTS_DIR"] = args.output_dir
+        paths["LOGS_DIR"] = args.output_dir / "logs"
+    
     # Setup paths using global directories
-    wsi_base_dir = SLIDES_DIR
-    output_dir = DOWNSAMPLED_DIR
+    wsi_base_dir = paths["RAW_DIR"] / "slides"
+    downsized_dir = paths["PROCESSED_DIR"] / "downsized_slides"
+    log_dir = paths["LOGS_DIR"]
     
     # Create output directory and setup logging
-    output_dir.mkdir(exist_ok=True, parents=True)
-    setup_logging()
+    downsized_dir.mkdir(exist_ok=True, parents=True)
+    setup_logging(log_dir)
     
     logging.info(f"Starting WSI downsampling process")
     logging.info(f"Input directory: {wsi_base_dir}")
-    logging.info(f"Output directory: {output_dir}")
+    logging.info(f"Output directory: {downsized_dir}")
     logging.info(f"Downsample factor: {DOWNSAMPLE}")
+    
+    # Print paths
+    logging.info("Project paths:")
+    for name, path in paths.items():
+        logging.info(f"  {name}: {path}")
     
     # Find all WSI files
     wsi_files = list(wsi_base_dir.rglob("*.mrxs"))
@@ -123,7 +149,7 @@ def main():
     for idx, wsi_file in enumerate(wsi_files, 1):
         wsi_name = wsi_file.stem
         output_pattern = f"{wsi_name}_downsampled{DOWNSAMPLE}x.png"
-        output_path = output_dir / output_pattern
+        output_path = downsized_dir / output_pattern
         
         if output_path.exists():
             logging.info(f"Skipping {wsi_name} ({idx}/{total_wsis}) - Already processed")
@@ -132,7 +158,7 @@ def main():
             
         logging.info(f"Processing {wsi_name} ({idx}/{total_wsis})")
         
-        if downsample_wsi(str(wsi_file), str(output_dir), DOWNSAMPLE):
+        if downsample_wsi(str(wsi_file), str(downsized_dir), DOWNSAMPLE):
             successful_count += 1
         else:
             failed_count += 1

@@ -19,11 +19,19 @@ from PIL import Image
 from pathlib import Path
 from tqdm import tqdm
 import logging
+import argparse
 from typing import Dict, List, Optional, Tuple
+
+import sys
+# Add the project root to the path if not already
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+from src.config.paths import get_project_paths, add_path_args
 
 class HistologyDataset(Dataset):
     def __init__(self, split: str, transform=None, task: str = 'inflammation', 
-                 he_only: bool = True, scanner1_only: bool = False):
+                 he_only: bool = True, scanner1_only: bool = False, paths=None):
         """Initialize the Histology Dataset.
         
         Args:
@@ -32,16 +40,22 @@ class HistologyDataset(Dataset):
             task (str): Classification task ('inflammation' or 'tissue')
             he_only (bool): If True, use only HE stained slides (default: True)
             scanner1_only (bool): If True, use only scanner 1 slides (default: False)
+            paths (Dict[str, Path]): Dictionary of project paths (default: None)
         """
         self.split = split
         self.transform = transform
         self.task = task
-        self.base_path = Path('/mnt/data/dliebel/2024_dliebel')
-        self.tile_path = self.base_path / 'data/processed/tiles'
+        
+        # Get project paths
+        if paths is None:
+            paths = get_project_paths()
+        
+        self.base_path = paths["BASE_DIR"]
+        self.tile_path = paths["PROCESSED_DIR"] / 'tiles'
         
         # Load split information
         split_file = f"{split}_HE.csv"  # All splits use _HE suffix
-        split_path = self.base_path / 'data/splits/seed_42' / split_file
+        split_path = paths["SPLITS_DIR"] / 'seed_42' / split_file
         
         if not split_path.exists():
             raise FileNotFoundError(f"Split file not found: {split_path}")
@@ -51,14 +65,14 @@ class HistologyDataset(Dataset):
         
         # Load appropriate metadata based on task
         if task == 'inflammation':
-            metadata_path = self.base_path / 'results/metrics/inflammation_status.csv'
+            metadata_path = paths["METRICS_DIR"] / 'inflammation_status.csv'
             self.metadata_df = pd.read_csv(metadata_path)
         else:  # tissue task
-            metadata_path = self.base_path / 'results/metrics/tissue_types.csv'
+            metadata_path = paths["METRICS_DIR"] / 'tissue_types.csv'
             self.metadata_df = pd.read_csv(metadata_path)
             
         # Load tile counts
-        self.tiles_df = pd.read_csv(self.base_path / 'results/metrics/tiles_per_particle.csv')
+        self.tiles_df = pd.read_csv(paths["METRICS_DIR"] / 'tiles_per_particle.csv')
         
         # Apply filters to metadata
         if he_only:
@@ -263,6 +277,9 @@ class HistologyDataset(Dataset):
                 
         except Exception as e:
             logging.error(f"Error loading image {sample['path']}: {e}")
+            # Instead of silently failing, raise a warning
+            logging.warning(f"Returning placeholder for corrupted image {sample['path']}")
             metadata = sample['metadata'].copy()
-            metadata['slide_name'] = sample['slide_name']  # Include slide_name even in error case
+            metadata['slide_name'] = sample['slide_name']
+            metadata['corrupted'] = True  # Mark as corrupted
             return torch.zeros((3, 224, 224)), torch.tensor(sample['label'], dtype=torch.float), metadata

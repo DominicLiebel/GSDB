@@ -9,7 +9,7 @@ Key Features:
 - Multi-GPU training support
 - Mixed precision training
 - Advanced data augmentation
-- Comprehensive logging and metrics
+- Comprehensive logging
 
 Example Usage:
     # Train inflammation classifier:
@@ -32,14 +32,19 @@ from tqdm import tqdm
 import yaml
 from sklearn.metrics import f1_score, roc_auc_score
 import numpy as np
-from pathlib import Path
 import json
 
-# Local imports
-from dataset import HistologyDataset
-import metrics_utils
-import training_utils
+# Add project root to path
+import sys
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
 
+# Local imports
+from src.models.dataset import HistologyDataset
+import src.models.metrics_utils as metrics_utils
+import src.models.training_utils as training_utils
+from src.config.paths import get_project_paths, add_path_args
 
 # Import models and weights
 from torchvision.models import (
@@ -48,19 +53,11 @@ from torchvision.models import (
     resnet18, ResNet18_Weights
 )
 
-# Base directory configuration
-BASE_DIR = Path('/mnt/data/dliebel/2024_dliebel')
-
-# Define common subdirectories
-CONFIG_DIR = BASE_DIR / 'configs'
-RESULTS_DIR = BASE_DIR / 'results'
-MODEL_DIR = RESULTS_DIR / 'models'
-DATA_DIR = BASE_DIR / 'data'
-
-def load_config(task: str) -> dict:
+def load_config(config_dir: Path, task: str) -> dict:
     """Load task-specific configuration from unified YAML file.
     
     Args:
+        config_dir (Path): Directory containing configuration files
         task (str): Task identifier ('inflammation' or 'tissue')
         
     Returns:
@@ -70,7 +67,7 @@ def load_config(task: str) -> dict:
         FileNotFoundError: If config file doesn't exist
         yaml.YAMLError: If config file is malformed
     """
-    config_path = CONFIG_DIR / 'model_config.yaml'
+    config_path = config_dir / 'model_config.yaml'
     try:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
@@ -356,11 +353,11 @@ class HistologyClassifier(nn.Module):
             
         return formatted_metrics
     
-def train_model(args):
+def train_model(args, paths):
     """Main training function with standardized approach."""
     
     # Load configuration
-    config = load_config(args.task)
+    config = load_config(paths["CONFIG_DIR"], args.task)
     
     # Extract architecture configuration
     arch_config = config['architecture']
@@ -395,13 +392,15 @@ def train_model(args):
     train_dataset = HistologyDataset(
         split='train',
         transform=get_transforms(args.task, is_training=True),
-        task=args.task
+        task=args.task,
+        paths=paths
     )
     
     val_dataset = HistologyDataset(
         split='val',
         transform=get_transforms(args.task, is_training=False),
-        task=args.task
+        task=args.task,
+        paths=paths
     )
     
     train_loader = DataLoader(
@@ -504,15 +503,16 @@ def train_model(args):
         # Save best model
         if val_metrics['loss'] < best_val_loss:
             best_val_loss = val_metrics['loss']
+            model_path = paths["MODELS_DIR"] / f"best_model_{args.task}_{model_name}.pt"
             training_utils.save_checkpoint(
                 model=model,
                 optimizer=optimizer,
                 epoch=epoch,
                 metrics=val_metrics,
                 config=config,
-                filepath=str(args.output_dir / f"best_model_{args.task}_{model_name}.pt")
+                filepath=str(model_path)
             )
-            logging.info(f"Saved best model with validation loss: {val_metrics['loss']:.4f}")
+            logging.info(f"Saved best model with validation loss: {val_metrics['loss']:.4f} to {model_path}")
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
@@ -553,36 +553,64 @@ def parse_args() -> argparse.Namespace:
         type=float,
         help="Weight decay (if not using config)"
     )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=MODEL_DIR,
-        help="Directory to save model and results"
-    )
-    parser.add_argument(
-    "--base-dir",
-    type=Path,
-    default=BASE_DIR,
-    help="Base directory for all data and outputs"
-    )
+    
+    # Add path arguments using the utility function
+    parser = add_path_args(parser)
+    
     return parser.parse_args()
+
+def calculate_basic_metrics(y_true, y_pred, y_scores=None):
+    """Calculate basic classification metrics."""
+    metrics = {}
+    
+    # Calculate confusion matrix
+    from sklearn.metrics import confusion_matrix
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    
+    # Calculate metrics
+    total = len(y_true)
+    metrics['accuracy'] = 100 * (tp + tn) / total if total > 0 else 0
+    metrics['sensitivity'] = 100 * tp / (tp + fn) if (tp + fn) > 0 else 0
+    metrics['specificity'] = 100 * tn / (tn + fp) if (tn + fp) > 0 else 0
+    
+    # Calculate F1 score
+    from sklearn.metrics import f1_score
+    metrics['f1'] = 100 * f1_score(y_true, y_pred, zero_division=0)
+    
+    # Calculate AUC if scores are provided
+    if y_scores is not None:
+        from sklearn.metrics import roc_auc_score
+        try:
+            metrics['auc'] = 100 * roc_auc_score(y_true, y_scores)
+        except ValueError:
+            metrics['auc'] = 50  # Default AUC for random classifier
+    
+    return metrics
 
 def main():
     """Main training function using either Optuna results or manual settings."""
     args = parse_args()
 
-    # Update base directory if provided
-    global BASE_DIR, CONFIG_DIR, RESULTS_DIR, MODEL_DIR, DATA_DIR
-    if args.base_dir != BASE_DIR:
-        BASE_DIR = args.base_dir
-        CONFIG_DIR = BASE_DIR / 'configs'
-        RESULTS_DIR = BASE_DIR / 'results'
-        MODEL_DIR = RESULTS_DIR / 'models'
-        DATA_DIR = BASE_DIR / 'data'
+    # Get project paths with any overrides from command line
+    paths = get_project_paths(base_dir=args.base_dir)
+    
+    # Override specific directories if provided
+    if args.data_dir:
+        paths["DATA_DIR"] = args.data_dir
+        paths["RAW_DIR"] = args.data_dir / "raw"
+        paths["PROCESSED_DIR"] = args.data_dir / "processed" 
+        paths["SPLITS_DIR"] = args.data_dir / "splits"
+    
+    if args.output_dir:
+        paths["RESULTS_DIR"] = args.output_dir
+        paths["LOGS_DIR"] = args.output_dir / "logs"
+        paths["MODELS_DIR"] = args.output_dir / "models"
+        paths["FIGURES_DIR"] = args.output_dir / "figures"
+        paths["TABLES_DIR"] = args.output_dir / "tables"
     
     # Setup output directory and logging
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_dir = args.output_dir / f"{args.task}_{timestamp}"
+    model_dir = paths["MODELS_DIR"] / f"{args.task}_{timestamp}"
     model_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(model_dir)
     
@@ -591,23 +619,18 @@ def main():
     for arg, value in vars(args).items():
         logging.info(f"  {arg}: {value}")
     
+    # Log paths
+    logging.info("Project paths:")
+    for path_name, path_value in paths.items():
+        logging.info(f"  {path_name}: {path_value}")
+    
     # Load configuration
-    config = load_config(args.task)
-    logging.info(f"Loaded configuration from {CONFIG_DIR / 'model_config.yaml'}")
+    config = load_config(paths["CONFIG_DIR"], args.task)
+    logging.info(f"Loaded configuration from {paths['CONFIG_DIR'] / 'model_config.yaml'}")
     logging.info(f"Configuration:\n{yaml.dump(config, indent=2)}")
     
-    # Use config values for training
-    training_config = {
-        'model': config['architecture']['name'],
-        'batch_size': config['batch_size'],
-        'learning_rate': config['optimizer']['learning_rate'],
-        'weight_decay': config['optimizer']['weight_decay'],
-        'dropout': config['dropout_rate'],
-        'pos_weight': config['pos_weight']
-    }
-    
     # Train model
-    train_model(args)
+    train_model(args, paths)
     
     logging.info("Training completed successfully!")
 

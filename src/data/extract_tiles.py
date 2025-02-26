@@ -13,6 +13,16 @@ from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 import numpy as np
 from tqdm import tqdm
+import argparse
+import sys
+
+# Add project root to path
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+# Import path configuration
+from src.config.paths import get_project_paths, add_path_args
 
 @dataclass
 class ExtractionConfig:
@@ -67,8 +77,9 @@ def process_tile_batch(params: Tuple) -> List[Optional[Tuple]]:
     return results
 
 class WSITileExtractor:
-    def __init__(self, config: ExtractionConfig):
+    def __init__(self, config: ExtractionConfig, paths: Dict[str, Path]):
         self.config = config
+        self.paths = paths
         self.setup_logging()
         logging.info(f"Using PIL version {Image.__version__}")
         logging.info(f"Configuration: tile_size={config.tile_size}, "
@@ -206,21 +217,54 @@ class WSITileExtractor:
             self.logger.error(f"Error processing WSI {wsi_path}: {str(e)}")
 
 def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Extract tiles from whole slide images")
+    parser = add_path_args(parser)
+    
+    # Add extraction-specific arguments
+    parser.add_argument("--tile-size", type=int, default=256, help="Size of extracted tiles")
+    parser.add_argument("--downsample", type=int, default=10, help="Downsample factor")
+    parser.add_argument("--overlap", type=int, default=64, help="Overlap between tiles")
+    parser.add_argument("--num-workers", type=int, default=32, help="Number of parallel workers")
+    parser.add_argument("--batch-size", type=int, default=512, help="Batch size for processing")
+    
+    args = parser.parse_args()
+    
+    # Get project paths with any overrides from command line
+    paths = get_project_paths(base_dir=args.base_dir)
+    
+    # Override specific directories if provided
+    if args.data_dir:
+        paths["DATA_DIR"] = args.data_dir
+        paths["RAW_DIR"] = args.data_dir / "raw"
+        paths["PROCESSED_DIR"] = args.data_dir / "processed" 
+    
+    if args.output_dir:
+        paths["RESULTS_DIR"] = args.output_dir
+        paths["LOGS_DIR"] = args.output_dir / "logs"
+    
     start_time = time.time()
-    config = ExtractionConfig()
     
-    # Updated paths according to new structure
-    base_dir = Path('/mnt/data/dliebel/2024_dliebel')
-    wsi_dir = base_dir / 'data/raw/slides'
-    annotation_dir = base_dir / 'data/raw/annotations'
-    output_dir = base_dir / 'data/processed/tiles'
+    # Create configuration from arguments
+    config = ExtractionConfig(
+        tile_size=args.tile_size,
+        downsample=args.downsample,
+        overlap=args.overlap,
+        num_workers=args.num_workers,
+        batch_size=args.batch_size
+    )
     
-    # Create output directory if it doesn't exist
+    # Setup paths
+    wsi_dir = paths["RAW_DIR"] / 'slides'
+    annotation_dir = paths["RAW_DIR"] / 'annotations'
+    output_dir = paths["PROCESSED_DIR"] / 'tiles'
+    log_dir = paths["LOGS_DIR"]
+    
+    # Create required directories
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Setup logging in results directory
-    log_dir = base_dir / 'results/logs'
     log_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
@@ -230,10 +274,20 @@ def main():
         ]
     )
     
-    extractor = WSITileExtractor(config)
-    wsi_files = list(wsi_dir.glob('**/*.mrxs'))
+    # Log paths
+    logging.info("Project paths:")
+    for path_name, path_value in paths.items():
+        logging.info(f"  {path_name}: {path_value}")
     
-    for wsi_path in tqdm(wsi_files, desc="Processing WSIs"):
+    extractor = WSITileExtractor(config, paths)
+    
+    # Find all WSI files
+    wsi_files = list(wsi_dir.glob('**/*.mrxs'))
+    total_wsis = len(wsi_files)
+    logging.info(f"Found {total_wsis} WSI files to process")
+    
+    # Process each WSI
+    for wsi_idx, wsi_path in enumerate(tqdm(wsi_files, desc="Processing WSIs"), 1):
         annotation_path = annotation_dir / f"{wsi_path.stem}_annotations.json"
         
         if not annotation_path.exists():
@@ -244,13 +298,10 @@ def main():
         if not annotation_data:
             continue
             
-        # Remove the create_output_directory call since we're using a fixed path
         extractor.extract_tiles(wsi_path, annotation_data, output_dir)
-    
-    total_wsi = len(wsi_files)
-    for wsi_idx, wsi_path in enumerate(tqdm(wsi_files, desc="Processing WSIs"), 1):
-        logging.info(f"Processing WSI {wsi_idx}/{total_wsi}: {wsi_path.stem}")
         
+        logging.info(f"Completed WSI {wsi_idx}/{total_wsis}: {wsi_path.stem}")
+    
     execution_time = time.time() - start_time
     logging.info(f"Total execution time: {execution_time:.2f} seconds")
 
