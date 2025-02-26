@@ -5,6 +5,7 @@ data/raw/slides
 data/processed
 results/logs
 results/models
+results/tuning
 x_AUXILIARIES
 src/models/__pycache__
 setup_project.py

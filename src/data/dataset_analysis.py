@@ -3,9 +3,20 @@ import json
 import os
 from collections import Counter, defaultdict
 import numpy as np
+from pathlib import Path
+import sys
 
-# Define base directory
-BASE_DIR = "/mnt/data/dliebel/2024_dliebel"
+# Add the project root to the path if not already
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+# Import path configuration
+from src.config.paths import get_project_paths
+
+# Get project paths
+paths = get_project_paths()
+BASE_DIR = paths["BASE_DIR"]
 
 # Load the necessary data files
 def load_csv_file(filepath):

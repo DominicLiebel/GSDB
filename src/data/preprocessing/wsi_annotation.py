@@ -1328,27 +1328,77 @@ class AnnotationTool:
             # Classify regions if classifier is available
             if hasattr(self, 'auto_classifier') and self.auto_classifier is not None:
                 try:
-                    # Update annotations with classifications
-                    classified_annotations = self.auto_classifier.process_wsi(
-                        Path("/Users/dominicliebel/Downloads/251_HE/251_225_1_HE.mrxs"),  # Needs to be updated (+ new function to find mrxs filepath) to mrxs filepath instead of image
-                        # TODO - Update to use the actual WSI path
-                        new_annotations
-                    )
+                    # FIXED: Get the actual MRXS file path from the current WSI name
+                    # instead of using a hard-coded path
+                    wsi_name = self.current_wsi_name
                     
-                    # Update properties from classifier
-                    for i, annotation in enumerate(new_annotations):
-                        classified = classified_annotations[i]
-                        tissue_type = classified['properties']['classification']['tissue_type']
-                        inflammation_type = classified['properties']['classification']['inflammation_type']
+                    # Try to find the corresponding MRXS file
+                    mrxs_paths = []
+                    
+                    # Search in the raw slides directory for matching WSI
+                    if hasattr(self, 'paths') and 'RAW_DIR' in self.paths:
+                        raw_dir = self.paths['RAW_DIR'] / 'slides'
+                        if raw_dir.exists():
+                            pattern = f"{wsi_name}*.mrxs"
+                            mrxs_paths = list(raw_dir.glob(pattern))
+                    
+                    # If not found, try a more generic search
+                    if not mrxs_paths:
+                        # Try to get the parent directory of the current image path
+                        if hasattr(self, '_current_image_path'):
+                            image_dir = self._current_image_path.parent.parent
+                            if image_dir.exists():
+                                pattern = f"**/{wsi_name}*.mrxs"
+                                mrxs_paths = list(image_dir.glob(pattern))
+                    
+                    # If still not found, use a fallback approach based on the PNG filename
+                    if not mrxs_paths and hasattr(self, '_current_image_path'):
+                        # Extract WSI info from PNG filename
+                        png_name = self._current_image_path.stem
+                        base_name = png_name.replace('_downsampled16x', '')
                         
-                        # Update classification and color
-                        annotation['properties']['classification'].update({
-                            'tissue_type': tissue_type,
-                            'inflammation_type': inflammation_type,
-                            'color': self.ANNOTATION_OPTIONS['tissue'][tissue_type]
-                        })
+                        # Try to find it in common directories
+                        common_dirs = [
+                            Path("./data/raw/slides"),
+                            Path("/data/slides"),
+                            Path("/mnt/data/slides")
+                        ]
+                        
+                        for dir_path in common_dirs:
+                            if dir_path.exists():
+                                pattern = f"{base_name}*.mrxs"
+                                found_paths = list(dir_path.glob(pattern))
+                                if found_paths:
+                                    mrxs_paths = found_paths
+                                    break
                     
-                    self.status_var.set("Regions detected and classified")
+                    if mrxs_paths:
+                        mrxs_path = mrxs_paths[0]  # Use the first match
+                        logging.info(f"Found matching MRXS file: {mrxs_path}")
+                        
+                        # Update annotations with classifications
+                        classified_annotations = self.auto_classifier.process_wsi(
+                            mrxs_path,  # Use the found path
+                            new_annotations
+                        )
+                        
+                        # Update properties from classifier
+                        for i, annotation in enumerate(new_annotations):
+                            classified = classified_annotations[i]
+                            tissue_type = classified['properties']['classification']['tissue_type']
+                            inflammation_type = classified['properties']['classification']['inflammation_type']
+                            
+                            # Update classification and color
+                            annotation['properties']['classification'].update({
+                                'tissue_type': tissue_type,
+                                'inflammation_type': inflammation_type,
+                                'color': self.ANNOTATION_OPTIONS['tissue'][tissue_type]
+                            })
+                        
+                        self.status_var.set("Regions detected and classified")
+                    else:
+                        logging.warning(f"Could not find matching MRXS file for {wsi_name}")
+                        self.status_var.set("Regions detected (could not find MRXS file for classification)")
                 except Exception as e:
                     logging.error(f"Error during classification: {str(e)}")
                     self.status_var.set("Regions detected (classification failed)")

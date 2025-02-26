@@ -738,21 +738,31 @@ def validate_metrics_consistency(metrics: Dict) -> Dict:
     return validated_metrics
 
 
-def calculate_validation_thresholds(model_path: Path, task: str, output_dir: Path) -> Dict:
+def calculate_validation_thresholds(model_path: Optional[Path] = None, model: Optional[nn.Module] = None, 
+                             task: str = None, output_dir: Optional[Path] = None) -> Dict:
     """Calculate optimal thresholds using validation data only.
     
     Args:
-        model_path: Path to trained model
+        model_path: Path to trained model (optional if model is provided directly)
+        model: Trained model (optional if model_path is provided)
         task: Classification task ('inflammation' or 'tissue')
         output_dir: Directory to save thresholds
         
     Returns:
         Dictionary with optimal thresholds for each level
     """
+    # Validate inputs - either model_path or model must be provided
+    if model_path is None and model is None:
+        raise ValueError("Either model_path or model must be provided")
+    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    # Load model
-    model = load_model(model_path, device)
+    # Load model if not provided directly
+    if model is None:
+        model = load_model(model_path, device)
+    else:
+        # Ensure model is on the correct device
+        model = model.to(device)
     
     # Create validation dataset and dataloader
     val_dataset = HistologyDataset(
@@ -796,31 +806,34 @@ def calculate_validation_thresholds(model_path: Path, task: str, output_dir: Pat
     # Convert to DataFrame
     val_df = pd.DataFrame(predictions)
     
+    if output_dir:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    
     # Calculate optimal thresholds on validation data
     optimal_thresholds = optimize_hierarchical_thresholds(
         df=val_df,
         task=task,
-        output_dir=output_dir / "validation_thresholds"
+        output_dir=output_dir
     )
 
     optimal_aggregation = optimize_aggregation_strategy(
         df=val_df,
         task=task,
-        output_dir=output_dir / "validation_aggregation"
+        output_dir=output_dir
     )
     
-
     validation_optimized = {
         **optimal_thresholds,
         "optimal_aggregation": optimal_aggregation  # Add aggregation strategy to results
     }
 
-    # Save thresholds to file
-    thresholds_file = output_dir / "validation_thresholds.json"
-    with open(thresholds_file, 'w') as f:
-        json.dump(validation_optimized, f, indent=2)
-        
-    logging.info(f"Validation-optimized thresholds and aggregation saved to: {thresholds_file}")
+    # Save thresholds to file if output directory is provided
+    if output_dir:
+        thresholds_file = output_dir / "validation_thresholds.json"
+        with open(thresholds_file, 'w') as f:
+            json.dump(validation_optimized, f, indent=2)
+            
+        logging.info(f"Validation-optimized thresholds and aggregation saved to: {thresholds_file}")
     
     return validation_optimized
 

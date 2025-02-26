@@ -30,6 +30,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Any, Union, List, Tuple
 
+# Add project root to path
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+# Import path configuration
+from src.config.paths import get_project_paths
+
+# Get project paths
+paths = get_project_paths()
+BASE_DIR = paths["BASE_DIR"]
+CONFIG_DIR = paths["CONFIG_DIR"]
+RESULTS_DIR = paths["RESULTS_DIR"]
+LOG_DIR = paths["LOGS_DIR"]
+MODEL_DIR = paths["MODELS_DIR"]
+TUNING_DIR = paths["TUNING_DIR"]
+
 # Third-party imports
 import optuna
 from optuna.trial import Trial
@@ -227,26 +244,6 @@ def parse_args():
     parser.add_argument('--timeout', type=int, help='Optimization timeout in hours')
     parser.add_argument('--gpus', type=str, help='Comma-separated GPU indices (e.g., "0,1")')
     return parser.parse_args()
-
-def create_base_config():
-    """Load base configuration from YAML files"""
-    try:
-        with open(CONFIG_DIR / 'model_config.yaml', 'r') as f:
-            model_config = yaml.safe_load(f)
-        with open(CONFIG_DIR / 'data_config.yaml', 'r') as f:
-            data_config = yaml.safe_load(f)
-        return {
-            'model': model_config,
-            'data': {
-                'common': data_config['data']['common'],
-                'task_specific': data_config['data']['task_specific']
-            },
-            'augmentation': data_config['augmentation'],
-            'preprocessing': data_config['preprocessing']
-        }
-    except FileNotFoundError as e:
-        logging.error(f"Missing config file: {e.filename}")
-        raise
 
 def create_dataloaders(args, batch_size: int) -> Tuple[DataLoader, DataLoader]:
     """Create train and validation dataloaders.

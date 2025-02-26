@@ -87,6 +87,7 @@ def get_transforms(is_training: bool = False) -> transforms.Compose:
                            std=(0.229, 0.224, 0.225))
     ])
 
+
 def evaluate_model(
     model: nn.Module,
     data_loader: DataLoader,
@@ -96,7 +97,20 @@ def evaluate_model(
     output_dir: Optional[Path] = None,
     validation_thresholds: Optional[Dict] = None  # Add this parameter
 ) -> Dict:
-    """Evaluate model at appropriate hierarchical levels."""
+    """Evaluate model at appropriate hierarchical levels.
+    
+    Args:
+        model: Neural network model to evaluate
+        data_loader: DataLoader for evaluation data
+        task: 'inflammation' or 'tissue'
+        split: Dataset split name ('test', 'test_scanner2')
+        device: Device to run evaluation on
+        output_dir: Directory to save evaluation results
+        validation_thresholds: Pre-computed thresholds from validation data
+        
+    Returns:
+        Dict: Dictionary of evaluation metrics
+    """
     model.eval()
     predictions = []
     
@@ -155,28 +169,22 @@ def evaluate_model(
     logging.info(f"Raw logits min: {df['raw_pred'].min():.3f}")
     logging.info(f"Raw logits max: {df['raw_pred'].max():.3f}")
     
-    # Using validation thresholds section - modify to check for aggregation
-    if validation_thresholds is not None:
-        logging.info("\nUsing validation-optimized thresholds:")
-        for level, metrics in validation_thresholds.items():
-            if level != "optimal_aggregation":  # Skip showing aggregation here
-                logging.info(f"{level.capitalize()} level: {metrics['threshold']:.3f}")
-                logging.info(f"  Sensitivity: {metrics['sensitivity']:.2f}")
-                logging.info(f"  Specificity: {metrics['specificity']:.2f}")
-                logging.info(f"  F1 Score: {metrics['f1']:.2f}")
-        
-        optimal_thresholds = {k: v for k, v in validation_thresholds.items() 
-                             if k != "optimal_aggregation"}
-    else:
-        # Original threshold optimization on test data (for development only)
-        optimal_thresholds = metrics_utils.optimize_hierarchical_thresholds(
-            df=df,
+    # FIXED: Always use validation thresholds or calculate them if not provided
+    if validation_thresholds is None:
+        logging.warning("No validation thresholds provided. Calculating default thresholds from validation data...")
+        # Calculate optimal thresholds on validation data - not test data
+        validation_thresholds = metrics_utils.calculate_validation_thresholds(
+            model_path=None,  # We'll use the current model, not load from path
+            model=model,      # Pass the current model directly
             task=task,
-            output_dir=output_dir
+            output_dir=output_dir / "validation_thresholds" if output_dir else None
         )
+        logging.info("Default validation thresholds calculated.")
 
-    # Log the results
-    logging.info("\nOptimal Thresholds:")
+    # Log the validation thresholds
+    logging.info("\nUsing validation-optimized thresholds:")
+    optimal_thresholds = {k: v for k, v in validation_thresholds.items() 
+                         if k != "optimal_aggregation"}
     for level, metrics in optimal_thresholds.items():
         logging.info(f"{level.capitalize()} level: {metrics['threshold']:.3f}")
         logging.info(f"  Sensitivity: {metrics['sensitivity']:.2f}")
@@ -184,7 +192,7 @@ def evaluate_model(
         logging.info(f"  F1 Score: {metrics['f1']:.2f}")
 
     # Use validation-optimized aggregation strategy if available
-    if validation_thresholds is not None and "optimal_aggregation" in validation_thresholds:
+    if "optimal_aggregation" in validation_thresholds:
         logging.info("\nUsing validation-optimized aggregation strategy:")
         agg_results = validation_thresholds["optimal_aggregation"]
         
@@ -210,11 +218,10 @@ def evaluate_model(
         logging.info(f"  False Negatives: {val_fn}")
         logging.info(f"  Total Samples: {val_tp + val_tn + val_fp + val_fn}")
         
-        # Add this code to recalculate TP, TN, FP, FN on the current test set
+        # Apply the optimal strategy to the current test set
         best_strategy = agg_results['best_strategy']
         best_threshold = agg_results['best_metrics']['threshold']
         
-        # Apply the optimal strategy to the current test set
         # Define aggregation function based on strategy name
         if best_strategy == 'mean':
             agg_func = np.mean
@@ -252,6 +259,7 @@ def evaluate_model(
             slide_preds = (slide_df['prob'] > best_threshold).astype(int)
             
             # Recalculate confusion matrix
+            from sklearn.metrics import confusion_matrix
             tn, fp, fn, tp = confusion_matrix(slide_df['label'].values, slide_preds).ravel()
             
             # Calculate accuracy and F1 score on test data
@@ -309,6 +317,7 @@ def evaluate_model(
             particle_preds = (particle_df['prob'] > best_threshold).astype(int)
             
             # Recalculate confusion matrix
+            from sklearn.metrics import confusion_matrix
             tn, fp, fn, tp = confusion_matrix(particle_df['label'].values, particle_preds).ravel()
             
             # Calculate accuracy and F1 score on test data
@@ -355,22 +364,24 @@ def evaluate_model(
             logging.info(f"  Accuracy: {test_accuracy:.4f}")
             logging.info(f"  F1 Score: {test_f1:.4f}")
     else:
-        # Only optimize on test data if validation strategy not provided
-        logging.info("\nOptimizing aggregation strategy on test data (validation strategy not provided):")
-        agg_results = metrics_utils.optimize_aggregation_strategy(
-            df=df,
-            task=task,
-            output_dir=output_dir
-        )
+        # FIXED: Don't optimize on test data
+        logging.info("\nNo pre-computed aggregation strategy found.")
+        agg_results = validation_thresholds.get("optimal_aggregation", {})
+        if not agg_results:
+            logging.warning("Using default mean aggregation with threshold of 0.5")
+            agg_results = {
+                "best_strategy": "mean",
+                "best_metrics": {"threshold": 0.5}
+            }
     
     # Log aggregation results
-    best_strategy = agg_results['best_strategy']
-    best_metrics = agg_results['best_metrics']
+    best_strategy = agg_results.get('best_strategy', 'mean')
+    best_metrics = agg_results.get('best_metrics', {})
     logging.info(f"  Strategy: {best_strategy}")
-    logging.info(f"  Threshold: {best_metrics['threshold']:.3f}")
-    logging.info(f"  Sensitivity: {best_metrics['sensitivity']:.2f}")
-    logging.info(f"  Specificity: {best_metrics['specificity']:.2f}")
-    logging.info(f"  F1 Score: {best_metrics['f1']:.2f}")
+    logging.info(f"  Threshold: {best_metrics.get('threshold', 0.5):.3f}")
+    logging.info(f"  Sensitivity: {best_metrics.get('sensitivity', 0):.2f}")
+    logging.info(f"  Specificity: {best_metrics.get('specificity', 0):.2f}")
+    logging.info(f"  F1 Score: {best_metrics.get('f1', 0):.2f}")
     
     # Create enhanced distribution plots
     if output_dir:
@@ -434,8 +445,8 @@ def evaluate_model(
         plt.close()
     
     # Calculate metrics using validation-optimized thresholds
-    if validation_thresholds is not None and 'slide' in validation_thresholds:
-        slide_threshold = validation_thresholds['slide']['threshold']
+    if 'slide' in optimal_thresholds:
+        slide_threshold = optimal_thresholds['slide']['threshold']
         threshold_for_metrics = np.log(slide_threshold/(1-slide_threshold)) if 0 < slide_threshold < 1 else 0.0
         
         logging.info(f"Calculating metrics using validation-optimized threshold: {threshold_for_metrics:.4f} (logit)")
@@ -672,15 +683,34 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path) -> None:
 def main():
     args = parse_args()
     
-    # Create output directory
+    # Get project paths with any overrides from command line
+    paths = get_project_paths(base_dir=args.base_dir)
+    
+    # Override specific directories if provided
+    if args.data_dir:
+        paths["DATA_DIR"] = args.data_dir
+        paths["RAW_DIR"] = args.data_dir / "raw"
+        paths["PROCESSED_DIR"] = args.data_dir / "processed" 
+        paths["SPLITS_DIR"] = args.data_dir / "splits"
+    
+    if args.output_dir:
+        paths["RESULTS_DIR"] = args.output_dir
+    else:
+        paths["RESULTS_DIR"] = paths["BASE_DIR"] / "results"
+    
+    # Create evaluation directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations') / \
-                f'{args.task}_{args.test_split}_{timestamp}'
+    output_dir = paths["RESULTS_DIR"] / "evaluations" / f'{args.task}_{args.test_split}_{timestamp}'
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Setup logging
     setup_logging(output_dir)
     logging.info(f"Starting evaluation for {args.task} task on {args.test_split} split")
+    
+    # Log paths
+    logging.info("Project paths:")
+    for path_name, path_value in paths.items():
+        logging.info(f"  {path_name}: {path_value}")
     
     try:
         # Setup device
@@ -690,14 +720,31 @@ def main():
         # Load model
         model = load_model(args.model_path, device, args.architecture)
         
-        # First, calculate optimal thresholds on validation data
-        logging.info("Calculating optimal thresholds on validation data...")
-        validation_thresholds = metrics_utils.calculate_validation_thresholds(
-            model_path=args.model_path,
-            task=args.task,
-            output_dir=output_dir
-        )
+        # ===== CHANGE HERE: Always calculate validation thresholds first =====
+        # Create validation data directory
+        validation_dir = output_dir / "validation_thresholds"
+        validation_dir.mkdir(exist_ok=True)
         
+        # Read pre-computed thresholds if provided
+        validation_thresholds = None
+        if args.threshold_path and Path(args.threshold_path).exists():
+            try:
+                with open(args.threshold_path, 'r') as f:
+                    validation_thresholds = json.load(f)
+                logging.info(f"Loaded validation thresholds from {args.threshold_path}")
+            except Exception as e:
+                logging.error(f"Error loading threshold file: {str(e)}")
+                
+        # If no valid thresholds were loaded, calculate them on validation data
+        if validation_thresholds is None:
+            logging.info("Calculating optimal thresholds on validation data...")
+            validation_thresholds = metrics_utils.calculate_validation_thresholds(
+                model_path=args.model_path,
+                model=model,  # Pass the model directly
+                task=args.task,
+                output_dir=validation_dir
+            )
+            
         # Now evaluate on test data using validation-optimized thresholds
         logging.info(f"Evaluating on {args.test_split} using validation-optimized thresholds...")
         
@@ -705,7 +752,8 @@ def main():
         dataset = HistologyDataset(
             split=args.test_split,
             transform=get_transforms(is_training=False),
-            task=args.task
+            task=args.task,
+            paths=paths
         )
         
         dataloader = DataLoader(
@@ -724,11 +772,15 @@ def main():
             split=args.test_split,
             device=device,
             output_dir=output_dir,
-            validation_thresholds=validation_thresholds  # Pass validation thresholds
+            validation_thresholds=validation_thresholds  # Always provide validation thresholds
         )
         
         # Save metrics using metrics_utils
         metrics_utils.save_metrics(metrics, output_dir)
+        
+        # Create ROC curves
+        plot_roc_curves(metrics['predictions_df'] if 'predictions_df' in metrics else pd.DataFrame(metrics['combined_predictions']), 
+                       args.task, output_dir)
         
         logging.info("Evaluation completed successfully!")
         
