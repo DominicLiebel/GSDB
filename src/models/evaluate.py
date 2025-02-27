@@ -547,7 +547,14 @@ def load_model(model_path: Path, device: torch.device, architecture: str = "giga
                 
         else:  # Default PyTorch loading (.pt, .pth)
             logging.info(f"Loading PyTorch model from {model_path}")
-            checkpoint = torch.load(model_path, map_location=device)
+            try:
+                # First try with weights_only=True (safer)
+                checkpoint = torch.load(model_path, map_location=device)
+            except Exception as e:
+                logging.warning(f"Failed to load with default settings, trying with weights_only=False: {str(e)}")
+                # If that fails, fall back to weights_only=False (less safe but more compatible)
+                checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+                logging.info("Successfully loaded model with weights_only=False")
             
             # Extract the model weights using standardized keys
             if isinstance(checkpoint, dict):

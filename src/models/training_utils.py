@@ -206,6 +206,16 @@ def configure_training_components(model: nn.Module,
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
+    # Convert string parameters to float if needed
+    if isinstance(learning_rate, str):
+        learning_rate = float(learning_rate)
+    if isinstance(weight_decay, str):
+        weight_decay = float(weight_decay)
+    if isinstance(momentum, str):
+        momentum = float(momentum)
+    if isinstance(pos_weight, str):
+        pos_weight = float(pos_weight)
+    
     # Create optimizer based on name
     if optimizer_name.lower() == "sgd":
         optimizer = torch.optim.SGD(
