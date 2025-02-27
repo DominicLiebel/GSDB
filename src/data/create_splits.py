@@ -96,7 +96,7 @@ class DataSplitter:
                         scanner_id = int(parts[2])  # e.g., 2
                         stain = parts[3]        # e.g., HE
                         
-                        inflammation_type = data[0]['properties']['classification']['inflammation_type']
+                        inflammation_status = data[0]['properties']['classification']['inflammation_status']
                         
                         slides_data.append({
                             'slide_name': f"{slide_id}_{patient_id}_{scanner_id}_{stain}",
@@ -104,7 +104,7 @@ class DataSplitter:
                             'patient_id': patient_id,
                             'scanner_id': scanner_id,
                             'stain': stain,
-                            'inflammation_type': inflammation_type
+                            'inflammation_status': inflammation_status
                         })
                         
                 except Exception as e:
@@ -182,7 +182,7 @@ class DataSplitter:
             logging.info(f"Slides: {len(split_df)}")
             logging.info(f"Patients: {split_df['patient_id'].nunique()}")
             logging.info("Inflammation distribution:")
-            logging.info(split_df['inflammation_type'].value_counts())
+            logging.info(split_df['inflammation_status'].value_counts())
         
         self._create_split_variants(splits)
         self._validate_splits(splits)
@@ -252,13 +252,13 @@ class DataSplitter:
             
             # Inflammation distribution
             logging.info("\nInflammation distribution:")
-            logging.info(split_df['inflammation_type'].value_counts())
+            logging.info(split_df['inflammation_status'].value_counts())
             
             # HE-only statistics
             he_only = split_df[split_df['stain'] == 'HE']
             logging.info(f"\nHE-only samples: {len(he_only)}")
             logging.info("HE inflammation distribution:")
-            logging.info(he_only['inflammation_type'].value_counts())
+            logging.info(he_only['inflammation_status'].value_counts())
             
 
 def main():
