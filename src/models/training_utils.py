@@ -181,14 +181,18 @@ def configure_training_components(model: nn.Module,
                                  learning_rate: float, 
                                  weight_decay: float,
                                  pos_weight: float = 1.0,
+                                 optimizer_name: str = "AdamW", 
+                                 momentum: float = 0.9,
                                  device: torch.device = None) -> Dict[str, Any]:
-    """Configure optimizer, criterion, and scaler.
+    """Configure optimizer, criterion, and scaler with support for SGD.
     
     Args:
         model: The neural network model
         learning_rate: Learning rate for optimizer
         weight_decay: Weight decay for optimizer
         pos_weight: Positive class weight for BCEWithLogitsLoss
+        optimizer_name: Name of optimizer to use ("AdamW" or "SGD")
+        momentum: Momentum parameter for SGD optimizer
         device: Device to place tensors on
         
     Returns:
@@ -197,11 +201,22 @@ def configure_training_components(model: nn.Module,
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=learning_rate,
-        weight_decay=weight_decay
-    )
+    # Create optimizer based on name
+    if optimizer_name.lower() == "sgd":
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=learning_rate,
+            momentum=momentum,
+            weight_decay=weight_decay
+        )
+        logging.info(f"Using SGD optimizer with learning_rate={learning_rate}, momentum={momentum}, weight_decay={weight_decay}")
+    else:  # Default to AdamW
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=learning_rate,
+            weight_decay=weight_decay
+        )
+        logging.info(f"Using AdamW optimizer with learning_rate={learning_rate}, weight_decay={weight_decay}")
     
     criterion = nn.BCEWithLogitsLoss(
         pos_weight=torch.tensor([pos_weight]).to(device)
@@ -254,3 +269,76 @@ def save_checkpoint(model: nn.Module,
                f"Spec: {metrics.get('specificity', 0):.2f}%, " +
                f"F1: {metrics.get('f1', 0):.2f}%, " +
                f"AUC: {metrics.get('auc', 0):.2f}%")
+    
+class EarlyStopping:
+    """Early stopping handler to prevent overfitting.
+    
+    Monitors validation metrics and stops training if no improvement
+    is seen for a specified number of epochs.
+    """
+    
+    def __init__(self, patience: int = 10, min_delta: float = 0.0, mode: str = 'min'):
+        """Initialize early stopping handler.
+        
+        Args:
+            patience: Number of epochs with no improvement after which training will stop
+            min_delta: Minimum change in monitored value to qualify as improvement
+            mode: 'min' if lower is better (e.g., loss), 'max' if higher is better (e.g., accuracy)
+        """
+        self.patience = patience
+        self.min_delta = min_delta
+        self.mode = mode
+        self.counter = 0
+        self.best_score = float('inf') if mode == 'min' else float('-inf')
+        self.early_stop = False
+        self.min_validation_loss = float('inf')
+        
+        logging.info(f"Early stopping initialized: patience={patience}, min_delta={min_delta}, mode={mode}")
+    
+    def __call__(self, current_score: float) -> bool:
+        """Check if training should be stopped.
+        
+        Args:
+            current_score: Current validation metric value
+            
+        Returns:
+            bool: True if training should stop, False otherwise
+        """
+        if self.mode == 'min':
+            score = -1.0 * current_score
+        else:
+            score = current_score
+            
+        if self.best_score == float('inf') or self.best_score == float('-inf'):
+            # First epoch
+            self.best_score = score
+            return False
+            
+        delta = score - self.best_score
+        
+        if delta > self.min_delta:
+            # Improvement found
+            self.best_score = score
+            self.counter = 0
+            
+            # Update min validation loss for reference
+            if self.mode == 'min':
+                self.min_validation_loss = current_score
+                
+            return False
+        
+        # No improvement
+        self.counter += 1
+        if self.counter >= self.patience:
+            logging.info(f"Early stopping triggered after {self.counter} epochs without improvement")
+            self.early_stop = True
+            return True
+            
+        return False
+        
+    def reset(self):
+        """Reset early stopping state."""
+        self.counter = 0
+        self.best_score = float('inf') if self.mode == 'min' else float('-inf')
+        self.early_stop = False
+        self.min_validation_loss = float('inf')

@@ -5,15 +5,19 @@ This script trains deep learning models for histological image classification.
 Supports both inflammation detection and tissue type classification.
 
 Key Features:
-- State-of-the-art model architectures (ConvNeXt, EfficientNetV2, Swin Transformer)
+- Multiple model architectures (ResNet18, GigaPath, ConvNeXt, Swin Transformer)
+- State-of-the-art transfer learning capabilities
 - Multi-GPU training support
 - Mixed precision training
 - Advanced data augmentation
 - Comprehensive logging
 
 Example Usage:
-    # Train inflammation classifier:
-    python train.py --task inflammation --model convnext_large --batch-size 64
+    # List available models for inflammation task:
+    python train.py --task inflammation --list-models
+
+    # Train inflammation classifier using ResNet18:
+    python train.py --task inflammation --model resnet18 --batch-size 64
 
     # Train tissue classifier with specific settings:
     python train.py --task tissue --model swin_v2_b --batch-size 32 --epochs 50
@@ -33,9 +37,9 @@ import yaml
 from sklearn.metrics import f1_score, roc_auc_score
 import numpy as np
 import json
+import sys
 
 # Add project root to path
-import sys
 project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
@@ -53,38 +57,61 @@ from torchvision.models import (
     resnet18, ResNet18_Weights
 )
 
-def load_config(config_dir: Path, task: str) -> dict:
-    """Load task-specific configuration from unified YAML file.
+def load_config(config_dir: Path, task: str, model_name: str = None) -> dict:
+    """Load task-specific and model-specific configuration from unified YAML file.
     
     Args:
         config_dir (Path): Directory containing configuration files
         task (str): Task identifier ('inflammation' or 'tissue')
-        
+        model_name (str, optional): Model identifier to load specific configuration
+            
     Returns:
         dict: Configuration dictionary containing model and training parameters
         
     Raises:
         FileNotFoundError: If config file doesn't exist
-        yaml.YAMLError: If config file is malformed
+        KeyError: If specified task or model not found in config file
     """
     config_path = config_dir / 'model_config.yaml'
     try:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
             
-        # Extract task-specific configuration
+        # Extract common configuration
+        common_config = config.get('common', {})
+        
+        # Extract task-specific data
         if task not in config:
             raise KeyError(f"Task '{task}' not found in config file")
             
-        # Combine common and task-specific configs
-        task_config = config[task].copy()
-        if 'common' in config:
-            task_config.update({
-                k: v for k, v in config['common'].items() 
-                if k not in task_config
-            })
+        task_config = config[task]
+        
+        # If no model specified, use first model in the task
+        if model_name is None:
+            model_name = next(iter(task_config.keys()))
+            logging.info(f"No model specified. Using default model: {model_name}")
+        
+        # Extract model-specific configuration
+        if model_name not in task_config:
+            available_models = list(task_config.keys())
+            raise KeyError(f"Model '{model_name}' not found for task '{task}'. Available models: {available_models}")
             
-        return task_config
+        model_config = task_config[model_name]
+        
+        # Combine configurations with priority order
+        # 1. Model-specific config (highest priority)
+        # 2. Common config (lowest priority)
+        result_config = common_config.copy()
+        result_config.update(model_config)
+        
+        # Add architecture data separately from architectures
+        result_config['architectures'] = config.get('architectures', {})
+        
+        # Add task and selected model for logging purposes
+        result_config['task'] = task
+        result_config['selected_model'] = model_name
+        
+        return result_config
         
     except FileNotFoundError:
         logging.error(f"Config file not found: {config_path}")
@@ -96,8 +123,97 @@ def load_config(config_dir: Path, task: str) -> dict:
         logging.error(f"Configuration error: {e}")
         raise
 
-def get_transforms(task: str, is_training: bool = False) -> T.Compose:
-    """Get data transformations for training or evaluation.
+def get_transforms(task: str, is_training: bool = False, config: dict = None) -> T.Compose:
+    """Get data transformations for training or evaluation based on configuration.
+    
+    Args:
+        task: 'inflammation' or 'tissue'
+        is_training: Whether to include training augmentations
+        config: Configuration dictionary containing transform settings
+        
+    Returns:
+        Composed transforms
+    """
+    if config is None:
+        # Fallback defaults if no config is provided
+        return _get_default_transforms(task, is_training)
+    
+    transforms_list = []
+    
+    # Get common normalization params
+    common_config = config.get('common', {})
+    norm_config = common_config.get('transforms', {}).get('normalization', {})
+    norm_mean = norm_config.get('mean', [0.485, 0.456, 0.406])
+    norm_std = norm_config.get('std', [0.229, 0.224, 0.225])
+    
+    if is_training:
+        # Get task and model specific transform settings
+        transform_config = config.get('transforms', {}).get('training', {})
+        
+        # Random resized crop
+        if 'random_resized_crop' in transform_config:
+            rrc_config = transform_config['random_resized_crop']
+            size = rrc_config.get('size', 224)
+            scale = tuple(rrc_config.get('scale', [0.8, 1.0]))
+            transforms_list.append(T.RandomResizedCrop(size, scale=scale))
+        
+        # Random flips
+        if transform_config.get('random_horizontal_flip', False):
+            transforms_list.append(T.RandomHorizontalFlip())
+            
+        if transform_config.get('random_vertical_flip', False):
+            transforms_list.append(T.RandomVerticalFlip())
+        
+        # Color jitter
+        if 'color_jitter' in transform_config:
+            jitter_config = transform_config['color_jitter']
+            brightness = jitter_config.get('brightness', 0)
+            contrast = jitter_config.get('contrast', 0)
+            saturation = jitter_config.get('saturation', 0)
+            hue = jitter_config.get('hue', 0)
+            transforms_list.append(T.ColorJitter(
+                brightness=brightness,
+                contrast=contrast,
+                saturation=saturation,
+                hue=hue
+            ))
+        
+        # Random rotation
+        if transform_config.get('random_rotation', {}).get('enabled', False):
+            degrees = transform_config.get('random_rotation', {}).get('degrees', 180)
+            transforms_list.append(T.RandomRotation(degrees))
+        
+        # Random blur
+        if transform_config.get('random_blur', {}).get('enabled', False):
+            kernel_size = transform_config.get('random_blur', {}).get('kernel_size', 3)
+            transforms_list.append(T.GaussianBlur(kernel_size=kernel_size))
+        
+        # Random affine transform
+        if transform_config.get('random_affine', {}).get('enabled', False):
+            degrees = transform_config.get('random_affine', {}).get('degrees', 15)
+            translate = tuple(transform_config.get('random_affine', {}).get('translate', [0.1, 0.1]))
+            transforms_list.append(T.RandomAffine(degrees=degrees, translate=translate))
+    else:
+        # Validation transforms from common config
+        val_config = common_config.get('transforms', {}).get('validation', {})
+        resize = val_config.get('resize', 256)
+        center_crop = val_config.get('center_crop', 224)
+        
+        transforms_list.extend([
+            T.Resize(resize),
+            T.CenterCrop(center_crop)
+        ])
+    
+    # Common transforms
+    transforms_list.extend([
+        T.ToTensor(),
+        T.Normalize(mean=norm_mean, std=norm_std)
+    ])
+    
+    return T.Compose(transforms_list)
+
+def _get_default_transforms(task: str, is_training: bool = False) -> T.Compose:
+    """Fallback function for default transforms if no config is provided.
     
     Args:
         task: 'inflammation' or 'tissue'
@@ -106,35 +222,39 @@ def get_transforms(task: str, is_training: bool = False) -> T.Compose:
     Returns:
         Composed transforms
     """
-    transforms = []
+    transforms_list = []
     
     if is_training:
         # Basic augmentations for all tasks
-        transforms.extend([
-            T.RandomResizedCrop(224, scale=(0.8, 1.0)),  # Keep 224 for standard size
+        transforms_list.extend([
+            T.RandomResizedCrop(224, scale=(0.8, 1.0)),
             T.RandomHorizontalFlip(),
             T.RandomVerticalFlip(),
             T.ColorJitter(brightness=0.2, contrast=0.2)
         ])
         
-        # Task-specific augmentations
+        # Default task-specific augmentations
         if task == 'inflammation':
-            transforms.append(T.RandomAffine(degrees=15, translate=(0.1, 0.1)))
+            transforms_list.extend([
+                T.RandomRotation(180),
+                T.GaussianBlur(kernel_size=3),
+                T.RandomAffine(degrees=15, translate=(0.1, 0.1))
+            ])
         else:  # tissue
-            transforms.append(T.RandomRotation(180))
+            transforms_list.append(T.RandomRotation(180))
     else:
-        transforms.extend([
+        transforms_list.extend([
             T.Resize(256),
-            T.CenterCrop(224)  # Keep 224 for standard size
+            T.CenterCrop(224)
         ])
     
     # Common transforms
-    transforms.extend([
+    transforms_list.extend([
         T.ToTensor(),
         T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
     
-    return T.Compose(transforms)
+    return T.Compose(transforms_list)
 
 def setup_logging(output_dir: Path):
     """Configure logging to both file and console.
@@ -204,8 +324,7 @@ class HistologyClassifier(nn.Module):
             from torchvision.models import swin_v2_b, Swin_V2_B_Weights
             self.backbone = swin_v2_b(weights=Swin_V2_B_Weights.DEFAULT)
             # Modify classifier head
-            in_features = self.backbone.head.in_features
-            self.backbone.head = nn.Sequential(
+            in_features = self.backbone.head = nn.Sequential(
                 nn.LayerNorm(in_features),
                 nn.Dropout(p=self.dropout_rate),
                 nn.Linear(in_features, self.num_classes)
@@ -227,7 +346,7 @@ class HistologyClassifier(nn.Module):
             weight_decay=weight_decay
         )
         self.criterion = nn.BCEWithLogitsLoss()
-        self.scaler = torch.amp.GradScaler('cuda')
+        self.scaler = torch.amp.GradScaler()
         return self.optimizer
 
     def train(self, mode: bool = True) -> 'HistologyClassifier':
@@ -352,35 +471,112 @@ class HistologyClassifier(nn.Module):
             formatted_metrics[f'{prefix}_{key}'] = value
             
         return formatted_metrics
+
+# GigaPath model implementation (moved from tune.py)
+class GigaPathClassifier(nn.Module):
+    """Classifier using Prov-GigaPath features for histology classification."""
     
+    def __init__(self, num_classes: int = 1, dropout_rate: float = 0.2):
+        super().__init__()
+        self.model_name = "gigapath"
+        
+        try:
+            import timm
+            # Load pretrained GigaPath tile encoder
+            self.tile_encoder = timm.create_model(
+                "hf_hub:prov-gigapath/prov-gigapath",
+                pretrained=True,
+                num_classes=0  # Disable classification head
+            )
+            
+            # Freeze the encoder weights
+            for param in self.tile_encoder.parameters():
+                param.requires_grad = False
+                
+            # Add classification head
+            self.classifier = nn.Sequential(
+                nn.Linear(1536, 512),  # GigaPath outputs 1536-dim features
+                nn.ReLU(),
+                nn.Dropout(dropout_rate),
+                nn.Linear(512, num_classes)
+            )
+        except ImportError:
+            logging.error("timm library not found. Please install with: pip install timm")
+            raise
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        with torch.no_grad():  # Ensure encoder remains in inference mode
+            features = self.tile_encoder(x)
+        return self.classifier(features)
+        
+    def train(self, mode: bool = True) -> 'GigaPathClassifier':
+        """Set training mode for classifier only."""
+        super().train(mode)
+        # Keep encoder in eval mode
+        self.tile_encoder.eval()
+        return self
+
 def train_model(args, paths):
-    """Main training function with standardized approach."""
+    """Main training function with standardized approach and config-based transforms."""
     
-    # Load configuration
-    config = load_config(paths["CONFIG_DIR"], args.task)
+    # Load configuration with model selection
+    config = load_config(paths["CONFIG_DIR"], args.task, args.model)
     
     # Extract architecture configuration
     arch_config = config['architecture']
     model_name = arch_config['name']
     
+    # Log the selected model
+    logging.info(f"Training {args.task} classifier using {model_name} architecture")
+    
+    # Override configuration with command line arguments if provided
+    if args.batch_size is not None:
+        config['batch_size'] = args.batch_size
+        logging.info(f"Overriding batch size: {args.batch_size}")
+        
+    if args.learning_rate is not None:
+        config['optimizer']['learning_rate'] = args.learning_rate
+        logging.info(f"Overriding learning rate: {args.learning_rate}")
+        
+    if args.weight_decay is not None:
+        config['optimizer']['weight_decay'] = args.weight_decay
+        logging.info(f"Overriding weight decay: {args.weight_decay}")
+        
+    if args.epochs is not None:
+        config['epochs'] = args.epochs
+        logging.info(f"Overriding epochs: {args.epochs}")
+    
     # Create model with proper configuration
-    model = HistologyClassifier(
-        model_name=model_name,
-        num_classes=1,
-        dropout_rate=config['dropout_rate']
-    )
+    if model_name == 'gigapath':
+        # Special case for GigaPath model
+        model = GigaPathClassifier(
+            num_classes=1,
+            dropout_rate=config['dropout_rate']
+        )
+    else:
+        # Standard models from HistologyClassifier
+        model = HistologyClassifier(
+            model_name=model_name,
+            num_classes=1,
+            dropout_rate=config['dropout_rate']
+        )
     
     # Setup device and multi-GPU support
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = training_utils.handle_multi_gpu_model(model)
     model = model.to(device)
 
-    # Configure training components
+    # Configure training components with optimizer name and momentum for SGD
+    optimizer_name = config['optimizer'].get('name', 'AdamW')
+    momentum = config['optimizer'].get('momentum', 0.9)
+    
     training_components = training_utils.configure_training_components(
         model=model,
         learning_rate=config['optimizer']['learning_rate'],
-        weight_decay=config['optimizer']['weight_decay'],
-        pos_weight=config['pos_weight'],
+        weight_decay=config['optimizer'].get('weight_decay', 0.0001),
+        pos_weight=config.get('pos_weight', 1.0),
+        optimizer_name=optimizer_name,
+        momentum=momentum,
         device=device
     )
     
@@ -388,17 +584,27 @@ def train_model(args, paths):
     criterion = training_components['criterion']
     scaler = training_components['scaler']
     
-    # Create datasets and dataloaders
+    # Setup early stopping if enabled
+    early_stopping = None
+    if config.get('early_stopping', {}).get('enabled', False):
+        patience = config['early_stopping'].get('patience', 10)
+        early_stopping = EarlyStopping(patience=patience, mode='min')
+        logging.info(f"Early stopping enabled with patience {patience}")
+    
+    # Create datasets and dataloaders with transforms from config
+    train_transform = get_transforms(args.task, is_training=True, config=config)
+    val_transform = get_transforms(args.task, is_training=False, config=config)
+    
     train_dataset = HistologyDataset(
         split='train',
-        transform=get_transforms(args.task, is_training=True),
+        transform=train_transform,
         task=args.task,
         paths=paths
     )
     
     val_dataset = HistologyDataset(
         split='val',
-        transform=get_transforms(args.task, is_training=False),
+        transform=val_transform,
         task=args.task,
         paths=paths
     )
@@ -422,17 +628,17 @@ def train_model(args, paths):
 
     # Configure scheduler
     scheduler = None
-    if config['scheduler']['enabled']:
-        if config['scheduler']['name'] == 'CosineAnnealingLR':
+    if config.get('scheduler', {}).get('enabled', False):
+        if config['scheduler'].get('name', 'CosineAnnealingLR') == 'CosineAnnealingLR':
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer,
-                T_max=config['scheduler']['T_max']
+                T_max=config['scheduler'].get('T_max', 50)
             )
-        elif config['scheduler']['name'] == 'ReduceLROnPlateau':
+        elif config['scheduler'].get('name') == 'ReduceLROnPlateau':
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer,
-                factor=config['scheduler']['factor'],
-                patience=config['scheduler']['patience']
+                factor=config['scheduler'].get('factor', 0.1),
+                patience=config['scheduler'].get('patience', 5)
             )
     
     # Training history
@@ -500,6 +706,11 @@ def train_model(args, paths):
             f"  AUC: {val_metrics['auc']:.2f}%"
         )
         
+        # Check early stopping
+        if early_stopping and early_stopping(val_metrics['loss']):
+            logging.info(f"Early stopping triggered at epoch {epoch+1}")
+            break
+        
         # Save best model
         if val_metrics['loss'] < best_val_loss:
             best_val_loss = val_metrics['loss']
@@ -513,51 +724,13 @@ def train_model(args, paths):
                 filepath=str(model_path)
             )
             logging.info(f"Saved best model with validation loss: {val_metrics['loss']:.4f} to {model_path}")
-
-def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Train histology classifier")
-    parser.add_argument(
-        "--task",
-        required=True,
-        choices=['inflammation', 'tissue'],
-        help="Classification task"
-    )
-    parser.add_argument(
-        "--config-path",
-        type=Path,
-        help="Path to hyperparameter config JSON from Optuna"
-    )
-    parser.add_argument(
-        "--model",
-        help="Model architecture (if not using config)"
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        help="Batch size (if not using config)"
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=50,
-        help="Number of epochs to train"
-    )
-    parser.add_argument(
-        "--learning-rate",
-        type=float,
-        help="Learning rate (if not using config)"
-    )
-    parser.add_argument(
-        "--weight-decay",
-        type=float,
-        help="Weight decay (if not using config)"
-    )
-    
-    # Add path arguments using the utility function
-    parser = add_path_args(parser)
-    
-    return parser.parse_args()
+            
+    # Save final training history
+    history_path = paths["RESULTS_DIR"] / f"training_history_{args.task}_{model_name}.json"
+    with open(history_path, 'w') as f:
+        json.dump(history, f, indent=2)
+        
+    logging.info(f"Training complete. Training history saved to {history_path}")
 
 def calculate_basic_metrics(y_true, y_pred, y_scores=None):
     """Calculate basic classification metrics."""
@@ -587,8 +760,55 @@ def calculate_basic_metrics(y_true, y_pred, y_scores=None):
     
     return metrics
 
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments with improved model selection."""
+    parser = argparse.ArgumentParser(description="Train histology classifier")
+    parser.add_argument(
+        "--task",
+        required=True,
+        choices=['inflammation', 'tissue'],
+        help="Classification task"
+    )
+    parser.add_argument(
+        "--model",
+        choices=['resnet18', 'gigapath', 'convnext_large', 'swin_v2_b'],
+        help="Model architecture to use"
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        help="Override batch size from config"
+    )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        help="Override number of epochs to train"
+    )
+    parser.add_argument(
+        "--learning-rate",
+        type=float,
+        help="Override learning rate from config"
+    )
+    parser.add_argument(
+        "--weight-decay",
+        type=float,
+        help="Override weight decay from config"
+    )
+    parser.add_argument(
+        "--list-models",
+        action="store_true",
+        help="List available models for the specified task and exit"
+    )
+    
+    # Add path arguments using the utility function
+    parser = add_path_args(parser)
+    
+    args = parser.parse_args()
+    
+    return args
+
 def main():
-    """Main training function using either Optuna results or manual settings."""
+    """Main training function with improved model selection."""
     args = parse_args()
 
     # Get project paths with any overrides from command line
@@ -608,6 +828,35 @@ def main():
         paths["FIGURES_DIR"] = args.output_dir / "figures"
         paths["TABLES_DIR"] = args.output_dir / "tables"
     
+    # Create required directories
+    for dir_path in [paths["LOGS_DIR"], paths["MODELS_DIR"]]:
+        dir_path.mkdir(parents=True, exist_ok=True)
+    
+    # If list-models flag is set, show available models and exit
+    if args.list_models:
+        if not args.task:
+            print("Error: --task must be specified with --list-models")
+            sys.exit(1)
+            
+        try:
+            # Load configuration to list available models
+            config_path = paths["CONFIG_DIR"] / 'model_config.yaml'
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                
+            if args.task in config:
+                available_models = list(config[args.task].keys())
+                print(f"\nAvailable models for {args.task} task:")
+                for model in available_models:
+                    print(f"  - {model}")
+                print("\nUse --model [name] to select a specific model.")
+            else:
+                print(f"Error: Task '{args.task}' not found in configuration.")
+            sys.exit(0)
+        except Exception as e:
+            print(f"Error listing models: {str(e)}")
+            sys.exit(1)
+    
     # Setup output directory and logging
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = paths["MODELS_DIR"] / f"{args.task}_{timestamp}"
@@ -623,11 +872,6 @@ def main():
     logging.info("Project paths:")
     for path_name, path_value in paths.items():
         logging.info(f"  {path_name}: {path_value}")
-    
-    # Load configuration
-    config = load_config(paths["CONFIG_DIR"], args.task)
-    logging.info(f"Loaded configuration from {paths['CONFIG_DIR'] / 'model_config.yaml'}")
-    logging.info(f"Configuration:\n{yaml.dump(config, indent=2)}")
     
     # Train model
     train_model(args, paths)
