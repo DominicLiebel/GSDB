@@ -1,4 +1,4 @@
-slide_name,slideID,patientID,scannerID,stain,inflammation_type
+slide_name,slide_id,patient_id,scanner_id,stain,inflammation_type
 1_1_1_HE,1,1,1,HE,Type B gastritis
 2_2_1_HE,2,2,1,HE,Type C gastritis
 3_2_1_MG,3,2,1,MG,Type C gastritis
