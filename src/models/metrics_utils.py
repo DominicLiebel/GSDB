@@ -337,15 +337,18 @@ def calculate_hierarchical_metrics(
     return metrics
 
 def optimize_hierarchical_thresholds(df: pd.DataFrame, task: str = 'inflammation', output_dir: Optional[Path] = None) -> Dict:
-    """Find optimal thresholds for each level of the hierarchy.
+    """Find optimal thresholds for each hierarchical level.
+    
+    IMPORTANT: This function should ONLY be used with validation data, never with test data,
+    to avoid threshold optimization bias in final evaluation.
     
     Args:
-        df: DataFrame with predictions
-        task: 'inflammation' or 'tissue'
+        df: DataFrame with model predictions from VALIDATION data only
+        task: 'inflammation' or 'tissue' 
         output_dir: Directory to save visualization plots
         
     Returns:
-        Dictionary with optimal thresholds for each level
+        Dictionary with optimal thresholds and metrics for each level
     """
     results = {}
     
@@ -477,8 +480,11 @@ def optimize_aggregation_strategy(df: pd.DataFrame, task: str = 'inflammation',
                                 output_dir: Optional[Path] = None) -> Dict:
     """Find optimal aggregation strategy for hierarchical predictions.
     
+    IMPORTANT: This function should ONLY be used with validation data, never with test data,
+    to avoid optimization bias in final evaluation.
+    
     Args:
-        df: DataFrame with tile-level predictions
+        df: DataFrame with tile-level predictions from VALIDATION data only
         task: 'inflammation' (slide-level) or 'tissue' (particle-level)
         output_dir: Directory to save visualization plots
         

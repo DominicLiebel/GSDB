@@ -50,13 +50,6 @@ import src.models.metrics_utils as metrics_utils
 import src.models.training_utils as training_utils
 from src.config.paths import get_project_paths, add_path_args
 
-# Import models and weights
-from torchvision.models import (
-    convnext_large, ConvNeXt_Large_Weights,
-    swin_v2_b, Swin_V2_B_Weights,
-    resnet18, ResNet18_Weights
-)
-
 def load_config(config_dir: Path, task: str, model_name: str = None) -> dict:
     """Load task-specific and model-specific configuration from unified YAML file.
     

@@ -171,15 +171,15 @@ def evaluate_model(
     
     # FIXED: Always use validation thresholds or calculate them if not provided
     if validation_thresholds is None:
-        logging.warning("No validation thresholds provided. Calculating default thresholds from validation data...")
-        # Calculate optimal thresholds on validation data - not test data
+        logging.warning("No validation thresholds provided. Calculating thresholds from validation data...")
+        # Calculate optimal thresholds on validation data - never on test data
         validation_thresholds = metrics_utils.calculate_validation_thresholds(
             model_path=None,  # We'll use the current model, not load from path
             model=model,      # Pass the current model directly
             task=task,
             output_dir=output_dir / "validation_thresholds" if output_dir else None
         )
-        logging.info("Default validation thresholds calculated.")
+        logging.info("Validation-optimized thresholds calculated.")
 
     # Log the validation thresholds
     logging.info("\nUsing validation-optimized thresholds:")
@@ -378,8 +378,8 @@ def evaluate_model(
             logging.info(f"  Accuracy: {test_accuracy:.4f}")
             logging.info(f"  F1 Score: {test_f1:.4f}")
     else:
-        # FIXED: Don't optimize on test data
-        logging.info("\nNo pre-computed aggregation strategy found.")
+        # FIXED: Never optimize on test data - either use validation thresholds or defaults
+        logging.info("\nNo pre-computed aggregation strategy found in validation thresholds.")
         agg_results = validation_thresholds.get("optimal_aggregation", {})
         if not agg_results:
             logging.warning("Using default mean aggregation with threshold of 0.5")
@@ -387,6 +387,7 @@ def evaluate_model(
                 "best_strategy": "mean",
                 "best_metrics": {"threshold": 0.5}
             }
+            logging.info("This default strategy was NOT optimized - results may be suboptimal.")
     
     # Log aggregation results
     best_strategy = agg_results.get('best_strategy', 'mean')
@@ -848,30 +849,41 @@ def main():
         # Load model
         model = load_model(args.model_path, device, args.architecture)
         
-        # ===== CHANGE HERE: Always calculate validation thresholds first =====
+        # ===== FIXED: Always use strictly separate validation data =====
         # Create validation data directory
         validation_dir = output_dir / "validation_thresholds"
         validation_dir.mkdir(exist_ok=True)
         
-        # Read pre-computed thresholds if provided
+        # Read pre-computed thresholds if provided - using pre-computed thresholds is preferred
+        # for scientific reproducibility and strict separation of validation/test data
         validation_thresholds = None
+        
         if args.threshold_path and Path(args.threshold_path).exists():
             try:
                 with open(args.threshold_path, 'r') as f:
                     validation_thresholds = json.load(f)
                 logging.info(f"Loaded validation thresholds from {args.threshold_path}")
+                logging.info("Using pre-computed thresholds ensures proper validation/test separation")
             except Exception as e:
                 logging.error(f"Error loading threshold file: {str(e)}")
                 
         # If no valid thresholds were loaded, calculate them on validation data
         if validation_thresholds is None:
-            logging.info("Calculating optimal thresholds on validation data...")
+            logging.info("No pre-computed thresholds found. Calculating using validation data only...")
+            logging.info("NOTE: For scientific publishing, consider pre-computing & saving thresholds")
+            
             validation_thresholds = metrics_utils.calculate_validation_thresholds(
                 model_path=args.model_path,
                 model=model,  # Pass the model directly
                 task=args.task,
                 output_dir=validation_dir
             )
+            
+            # Also save these thresholds for future use
+            threshold_save_path = validation_dir / "thresholds.json"
+            with open(threshold_save_path, 'w') as f:
+                json.dump(validation_thresholds, f, indent=2)
+            logging.info(f"Saved calculated validation thresholds to {threshold_save_path}")
             
         # Now evaluate on test data using validation-optimized thresholds
         logging.info(f"Evaluating on {args.test_split} using validation-optimized thresholds...")
