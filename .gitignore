@@ -3,7 +3,12 @@ data/raw/archive/2023_thempel
 data/raw/archive/slides
 data/raw/slides
 data/processed
-results
+results/evaluations
+results/figures
+results/logs
+results/models
+results/tables
+results/tuning
 x_AUXILIARIES
 src/models/__pycache__
 src/config/__pycache__
