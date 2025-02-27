@@ -13,6 +13,7 @@ A comprehensive deep learning framework for the classification of histological p
 - [Data Structure](#data-structure)
 - [Model Architecture](#model-architecture)
 - [Results](#results)
+- [Documentation](#documentation)
 - [Contributing](#contributing)
 - [Citation](#citation)
 - [License](#license)
@@ -35,7 +36,7 @@ The framework incorporates a full machine learning pipeline including:
 
 ### Requirements
 
-- Python 3.10+
+- Python 3.11+
 - CUDA-compatible GPU with at least 8GB VRAM (for training)
 - 16GB+ RAM
 - 100GB+ disk space (for dataset storage)
@@ -54,17 +55,12 @@ The framework incorporates a full machine learning pipeline including:
    conda activate gsdb
    ```
 
-3. Install the package in development mode:
-   ```bash
-   pip install -e .
-   ```
-
-4. Set the environment variable for the base directory:
+3. Set the environment variable for the base directory:
    ```bash
    export GASTRIC_BASE_DIR="/path/to/your/data"
    ```
 
-### Docker Installation (Alternative)
+### Docker Installation (Alternative) - TODO
 
 For complete reproducibility, we provide a Docker container:
 
@@ -88,6 +84,12 @@ common:
   deterministic: true
 ```
 
+You can also set the seed via command line in all scripts:
+
+```bash
+python src/models/train.py --task inflammation --model resnet18 --seed 42 --deterministic
+```
+
 ### Configuration Files
 
 All hyperparameters are stored in YAML files:
@@ -97,7 +99,7 @@ All hyperparameters are stored in YAML files:
 
 ### Pre-trained Models
 
-We provide pre-trained model weights for all reported experiments: TODO!
+We provide pre-trained model weights for all reported experiments: TODO
 
 ```bash
 # Download pre-trained models
@@ -110,6 +112,8 @@ All models are evaluated using the same protocol with three test sets:
 1. Internal validation set (`val` split)
 2. Internal test set (`test` split)
 3. External test set from different scanner (`test_scanner2` split)
+
+Each evaluation ensures proper separation between validation and test data, with thresholds optimized only on validation data.
 
 ## Usage
 
@@ -183,6 +187,8 @@ data/
         └── [other split files]
 ```
 
+For detailed information on the dataset, see our [data documentation](docs/data_documentation.md).
+
 ### Dataset Statistics
 
 Our dataset consists of:
@@ -194,18 +200,21 @@ Our dataset consists of:
 
 ## Model Architecture
 
-We implement several deep learning architectures:
+We implement several deep learning architectures through our modular architecture system:
 
 1. **ResNet18**: Baseline model from the ResNet family
-2. **ConvNeXt Large**: Modern convolutional network with improved design
-3. **Swin Transformer V2 Base**: Vision transformer with hierarchical structure
-4. **GigaPath**: Foundation model pre-trained on histopathology images
+2. **DenseNet121/169**: Higher capacity models with dense connections
+3. **ConvNeXt Large**: Modern convolutional network with improved design
+4. **Swin Transformer V2 Base**: Vision transformer with hierarchical structure
+5. **GigaPath**: Foundation model pre-trained on histopathology images
 
 Models are trained using:
 - Binary cross-entropy loss with class weighting
 - AdamW optimizer with cosine learning rate scheduling
 - Mixed-precision training for faster computation
 - Data augmentation including rotation, flipping, and color jittering
+
+The model implementations can be found in `src/models/architectures/`.
 
 ## Results
 
@@ -217,9 +226,16 @@ Our best model achieves:
 | ConvNeXt Large | Tissue Type | 93.2% | 0.936 | 0.952 |
 | Swin V2 B | Inflammation | 87.2% | 0.893 | 0.926 |
 | GigaPath | Inflammation | 91.5% | 0.925 | 0.945 |
-...
 
-For detailed performance metrics, see `results/evaluations/` directory after running evaluation.
+For detailed performance metrics, see `results/metrics/` directory after running evaluation.
+
+## Documentation
+
+We provide detailed documentation to help you understand and use the project:
+
+- [Data Documentation](docs/data_documentation.md): Detailed information about the dataset
+- [Project Organization](docs/project_organization.md): Code structure overview
+- [Style Guide](docs/style_guide.md): Coding conventions for contributors
 
 ## Contributing
 
@@ -231,7 +247,7 @@ We welcome contributions to this project. Please follow these steps:
 4. Push to the branch: `git push origin feature/your-feature-name`
 5. Submit a pull request
 
-Please ensure your code follows our style guide and includes appropriate tests.
+Please ensure your code follows our [style guide](docs/style_guide.md) and includes appropriate tests.
 
 ## Citation
 
@@ -253,3 +269,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 We thank the pathology department for providing annotated histological samples.
+
+This research was supported by [funding sources or grant numbers].

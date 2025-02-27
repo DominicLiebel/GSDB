@@ -80,9 +80,9 @@ Clusters are stored as simple objects with a unique ID and bounding box coordina
 ## Additional Features
 
 - Right-click an annotation to select it and edit its properties
-- Ctrl+Left-click and drag an annotation to move it
+- Left-click and drag an annotation to move it
 - In the annotation list, select one or more annotations to highlight, edit or delete them together
 - Use the "Process Clusters" button to assign cluster IDs to annotations inside each cluster's bounds
 - Toggle cluster visibility with the "Hide/Show Clusters" button
 
-The annotation tool auto-saves your work to prevent loss of data. Use the intuitive GUI to zoom, pan and efficiently annotate large slides for downstream analysis or model training.
+The annotation tool auto-saves your work to prevent loss of data. Use the intuitive GUI to pan and efficiently annotate large slides for downstream analysis or model training.

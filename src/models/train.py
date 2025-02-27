@@ -50,6 +50,13 @@ import src.models.metrics_utils as metrics_utils
 import src.models.training_utils as training_utils
 from src.config.paths import get_project_paths, add_path_args
 
+# Import models and weights
+from torchvision.models import (
+    convnext_large, ConvNeXt_Large_Weights,
+    swin_v2_b, Swin_V2_B_Weights,
+    resnet18, ResNet18_Weights
+)
+
 def load_config(config_dir: Path, task: str, model_name: str = None) -> dict:
     """Load task-specific and model-specific configuration from unified YAML file.
     
@@ -282,252 +289,8 @@ def configure_device(config: dict = None) -> torch.device:
         return torch.device('cuda')
     return torch.device('cpu')
 
-class HistologyClassifier(nn.Module):
-    """Advanced histology image classifier supporting multiple architectures."""
-    
-    def __init__(self, model_name: str, num_classes: int = 1, dropout_rate: float = 0.2):
-        super().__init__()
-        self.model_name = model_name
-        self.num_classes = num_classes
-        self.dropout_rate = dropout_rate
-        
-        # Create backbone based on model name
-        if model_name == 'resnet18':
-            from torchvision.models import resnet18, ResNet18_Weights
-            self.backbone = resnet18(weights=ResNet18_Weights.DEFAULT)
-            # Modify classifier head
-            in_features = self.backbone.fc.in_features
-            self.backbone.fc = nn.Sequential(
-                nn.Dropout(p=self.dropout_rate),
-                nn.Linear(in_features, self.num_classes)
-            )
-            
-        elif model_name == 'densenet121':
-            from torchvision.models import densenet121, DenseNet121_Weights
-            self.backbone = densenet121(weights=DenseNet121_Weights.DEFAULT)
-            # Modify classifier head
-            in_features = self.backbone.classifier.in_features
-            self.backbone.classifier = nn.Sequential(
-                nn.Dropout(p=self.dropout_rate),
-                nn.Linear(in_features, self.num_classes)
-            )
-            
-        elif model_name == 'densenet169':
-            from torchvision.models import densenet169, DenseNet169_Weights
-            self.backbone = densenet169(weights=DenseNet169_Weights.DEFAULT)
-            # Modify classifier head
-            in_features = self.backbone.classifier.in_features
-            self.backbone.classifier = nn.Sequential(
-                nn.Dropout(p=self.dropout_rate),
-                nn.Linear(in_features, self.num_classes)
-            )
-            
-        elif model_name == 'convnext_large':
-            from torchvision.models import convnext_large, ConvNeXt_Large_Weights
-            self.backbone = convnext_large(weights=ConvNeXt_Large_Weights.DEFAULT)
-            # Modify classifier head
-            self.backbone.classifier = nn.Sequential(
-                nn.LayerNorm(1536),
-                nn.Flatten(1),
-                nn.Linear(1536, self.num_classes)
-            )
-            
-        elif model_name == 'swin_v2_b':
-            from torchvision.models import swin_v2_b, Swin_V2_B_Weights
-            self.backbone = swin_v2_b(weights=Swin_V2_B_Weights.DEFAULT)
-            # Modify classifier head
-            in_features = self.backbone.head.in_features
-            self.backbone.head = nn.Sequential(
-                nn.LayerNorm(in_features),
-                nn.Dropout(p=self.dropout_rate),
-                nn.Linear(in_features, self.num_classes)
-            )
-            
-        else:
-            raise ValueError(f"Unsupported model: {model_name}. Use 'resnet18', 'densenet121', 'densenet169', 'swin_v2_b', or 'convnext_large'. For GigaPath, use GigaPathClassifier.")
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through the model."""
-        return self.backbone(x)
-
-
-    def configure_optimizers(self, lr: float, weight_decay: float):
-        """Configure optimizer and related training components."""
-        self.optimizer = torch.optim.AdamW(
-            self.parameters(),
-            lr=lr,
-            weight_decay=weight_decay
-        )
-        self.criterion = nn.BCEWithLogitsLoss()
-        self.scaler = torch.amp.GradScaler()
-        return self.optimizer
-
-    def train(self, mode: bool = True) -> 'HistologyClassifier':
-        """Set training mode."""
-        super().train(mode)
-        self.backbone.train(mode)
-        return self
-        
-    def eval(self) -> 'HistologyClassifier':
-        """Set evaluation mode."""
-        super().eval()
-        self.backbone.eval()
-        return self
-        
-    def to(self, device):
-        """Move model to device."""
-        super().to(device)
-        self.device = device
-        self.backbone = self.backbone.to(device)
-        return self
-    
-    def train_epoch(self, train_loader: DataLoader) -> Dict:
-        """Train for one epoch with optimized performance."""
-        self.train()
-        metrics = {
-            'train_loss': 0.0,
-            'correct': 0,
-            'total': 0,
-            'preds': [],
-            'labels': [],
-            'raw_preds': []
-        }
-        
-        torch.backends.cudnn.benchmark = True
-        
-        for batch in tqdm(train_loader, desc="Training"):
-            inputs, labels, _ = batch
-            inputs = inputs.to(self.device, memory_format=torch.channels_last, non_blocking=True)
-            labels = labels.to(self.device, non_blocking=True)
-            
-            self.optimizer.zero_grad(set_to_none=True)
-            
-            with torch.amp.autocast('cuda'):
-                outputs = self.backbone(inputs).squeeze()
-                loss = self.criterion(outputs, labels)
-            
-            self.scaler.scale(loss).backward()
-            
-            if hasattr(self, 'gradient_clipping') and self.gradient_clipping:
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.backbone.parameters(), self.gradient_clipping)
-            
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-            
-            # Update metrics using raw logits
-            metrics['train_loss'] += loss.item()
-            with torch.no_grad():
-                preds = (outputs > 0).float()  # No sigmoid needed
-            metrics['correct'] += (preds == labels).sum().item()
-            metrics['total'] += labels.size(0)
-            metrics['preds'].extend(preds.cpu().numpy())
-            metrics['labels'].extend(labels.cpu().numpy())
-            metrics['raw_preds'].extend(outputs.detach().cpu().numpy())
-            
-        return self._calculate_metrics(metrics, len(train_loader), 'train')
-    
-    def evaluate(self, data_loader: DataLoader, prefix: str = 'val') -> Dict:
-        """Evaluate the model on the provided data."""
-        self.eval()
-        metrics = {
-            f'{prefix}_loss': 0.0,
-            'correct': 0,
-            'total': 0,
-            'preds': [],
-            'labels': [],
-            'raw_preds': []
-        }
-        
-        with torch.no_grad():
-            for batch in tqdm(data_loader, desc=f"Evaluating {prefix}"):
-                inputs, labels, _ = batch
-                inputs, labels = inputs.to(self.device), labels.to(self.device)
-                outputs = self.backbone(inputs).squeeze()
-                loss = self.criterion(outputs, labels)
-                
-                metrics[f'{prefix}_loss'] += loss.item()
-                preds = (outputs > 0).float()
-                metrics['correct'] += (preds == labels).sum().item()
-                metrics['total'] += labels.size(0)
-                metrics['preds'].extend(preds.cpu().numpy())
-                metrics['labels'].extend(labels.cpu().numpy())
-                metrics['raw_preds'].extend(outputs.cpu().numpy())
-                
-        return self._calculate_metrics(metrics, len(data_loader), prefix)
-
-    def _calculate_metrics(self, metrics: Dict, num_batches: int, prefix: str) -> Dict:
-        """Calculate performance metrics.
-        
-        Args:
-            metrics: Dictionary containing raw metrics data
-            num_batches: Number of batches processed
-            prefix: Prefix for metric names (e.g., 'train' or 'val')
-            
-        Returns:
-            Dict: Dictionary containing calculated metrics
-        """
-        # Calculate basic metrics using imported function
-        basic_metrics = calculate_basic_metrics(
-            y_true=metrics['labels'],
-            y_pred=metrics['preds'],
-            y_scores=metrics['raw_preds']
-        )
-        
-        # Format metrics with prefix
-        formatted_metrics = {
-            f'{prefix}_loss': metrics[f'{prefix}_loss'] / num_batches,
-        }
-        
-        # Add basic metrics with prefix
-        for key, value in basic_metrics.items():
-            formatted_metrics[f'{prefix}_{key}'] = value
-            
-        return formatted_metrics
-
-# GigaPath model implementation (moved from tune.py)
-class GigaPathClassifier(nn.Module):
-    """Classifier using Prov-GigaPath features for histology classification."""
-    
-    def __init__(self, num_classes: int = 1, dropout_rate: float = 0.2):
-        super().__init__()
-        self.model_name = "gigapath"
-        
-        try:
-            import timm
-            # Load pretrained GigaPath tile encoder
-            self.tile_encoder = timm.create_model(
-                "hf_hub:prov-gigapath/prov-gigapath",
-                pretrained=True,
-                num_classes=0  # Disable classification head
-            )
-            
-            # Freeze the encoder weights
-            for param in self.tile_encoder.parameters():
-                param.requires_grad = False
-                
-            # Add classification head
-            self.classifier = nn.Sequential(
-                nn.Linear(1536, 512),  # GigaPath outputs 1536-dim features
-                nn.ReLU(),
-                nn.Dropout(dropout_rate),
-                nn.Linear(512, num_classes)
-            )
-        except ImportError:
-            logging.error("timm library not found. Please install with: pip install timm")
-            raise
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        with torch.no_grad():  # Ensure encoder remains in inference mode
-            features = self.tile_encoder(x)
-        return self.classifier(features)
-        
-    def train(self, mode: bool = True) -> 'GigaPathClassifier':
-        """Set training mode for classifier only."""
-        super().train(mode)
-        # Keep encoder in eval mode
-        self.tile_encoder.eval()
-        return self
+# Import shared model architectures from the dedicated module
+from src.models.architectures import HistologyClassifier, GigaPathClassifier
 
 def train_model(args, paths):
     """Main training function with standardized approach and config-based transforms."""
@@ -654,27 +417,38 @@ def train_model(args, paths):
                 patience=config['scheduler'].get('patience', 5)
             )
     
-    # Training history
+    # Training history with reproducibility information
     history = {
         'train_loss': [],
         'train_accuracy': [],
         'val_loss': [],
         'val_accuracy': [],
         'val_f1': [],
-        'val_auc': []
+        'val_auc': [],
+        # Add reproducibility information
+        'metadata': {
+            'random_seed': args.seed,
+            'deterministic': args.deterministic,
+            'pytorch_version': torch.__version__,
+            'cuda_version': torch.version.cuda if torch.cuda.is_available() else None,
+            'model_name': model_name,
+            'timestamp': datetime.now().isoformat()
+        }
     }
     
     # Training loop
     best_val_loss = float('inf')
     for epoch in range(config['epochs']):
-        # Training phase
+        # Training phase - pass deterministic flag from args
         train_metrics = training_utils.train_epoch(
             model=model,
             train_loader=train_loader,
             optimizer=optimizer,
             criterion=criterion,
             scaler=scaler,
-            device=device
+            device=device,
+            use_amp=True,  # Can be made configurable
+            deterministic=args.deterministic 
         )
         
         # Validation phase
@@ -734,9 +508,12 @@ def train_model(args, paths):
                 epoch=epoch,
                 metrics=val_metrics,
                 config=config,
-                filepath=str(model_path)
+                filepath=str(model_path),
+                seed=args.seed,
+                deterministic=args.deterministic
             )
             logging.info(f"Saved best model with validation loss: {val_metrics['loss']:.4f} to {model_path}")
+            logging.info(f"Model saved with seed={args.seed}, deterministic={args.deterministic}")
             
     # Save final training history
     history_path = paths["RESULTS_DIR"] / f"training_history_{args.task}_{model_name}.json"
@@ -808,6 +585,17 @@ def parse_args() -> argparse.Namespace:
         help="Override weight decay from config"
     )
     parser.add_argument(
+        "--seed", 
+        type=int,
+        default=42,
+        help="Random seed for reproducibility"
+    )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Enable deterministic mode for reproducibility (may reduce performance)"
+    )
+    parser.add_argument(
         "--list-models",
         action="store_true",
         help="List available models for the specified task and exit"
@@ -844,6 +632,15 @@ def main():
     # Create required directories
     for dir_path in [paths["LOGS_DIR"], paths["MODELS_DIR"]]:
         dir_path.mkdir(parents=True, exist_ok=True)
+        
+    # Initialize logging before setting seeds
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_dir = paths["MODELS_DIR"] / f"{args.task}_{timestamp}"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    setup_logging(model_dir)
+    
+    # Set random seeds for reproducibility
+    training_utils.set_all_seeds(args.seed)
     
     # If list-models flag is set, show available models and exit
     if args.list_models:

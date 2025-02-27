@@ -113,42 +113,8 @@ def setup_logging(args):
     logging.info(f"Log file created at: {log_file}")
     return log_file
 
-class GigaPathClassifier(nn.Module):
-    """Classifier using Prov-GigaPath features for histology classification."""
-    
-    def __init__(self, num_classes: int = 1, dropout_rate: float = 0.2):
-        super().__init__()
-        
-        # Load pretrained GigaPath tile encoder
-        self.tile_encoder = timm.create_model(
-            "hf_hub:prov-gigapath/prov-gigapath",
-            pretrained=True,
-            num_classes=0  # Disable classification head
-        )
-        
-        # Freeze the encoder weights
-        for param in self.tile_encoder.parameters():
-            param.requires_grad = False
-            
-        # Add classification head
-        self.classifier = nn.Sequential(
-            nn.Linear(1536, 512),  # GigaPath outputs 1536-dim features
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(512, num_classes)
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        with torch.no_grad():  # Ensure encoder remains in inference mode
-            features = self.tile_encoder(x)
-        return self.classifier(features)
-        
-    def train(self, mode: bool = True) -> 'GigaPathClassifier':
-        """Set training mode for classifier only."""
-        super().train(mode)
-        # Keep encoder in eval mode
-        self.tile_encoder.eval()
-        return self
+# Import shared model architectures from the dedicated module
+from src.models.architectures import GigaPathClassifier, HistologyClassifier
 
 
 class ModelTracker:

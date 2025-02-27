@@ -35,37 +35,8 @@ from src.models.dataset import HistologyDataset
 import src.models.metrics_utils as metrics_utils
 from src.config.paths import get_project_paths, add_path_args
 
-# Define GigaPathClassifier class
-class GigaPathClassifier(nn.Module):
-    """Classifier using Prov-GigaPath features."""
-    
-    def __init__(self, num_classes: int = 1, dropout_rate: float = 0.2):
-        super().__init__()
-        self.model_name = "gigapath"
-        
-        # Load pretrained GigaPath tile encoder
-        self.tile_encoder = timm.create_model(
-            "hf_hub:prov-gigapath/prov-gigapath",
-            pretrained=True,
-            num_classes=0  # Disable classification head
-        )
-        
-        # Freeze the encoder weights
-        for param in self.tile_encoder.parameters():
-            param.requires_grad = False
-            
-        # Add classification head
-        self.classifier = nn.Sequential(
-            nn.Linear(1536, 512),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(512, num_classes)
-        )
-            
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        with torch.no_grad():
-            features = self.tile_encoder(x)
-        return self.classifier(features)
+# Import shared model architectures from the dedicated module
+from src.models.architectures import GigaPathClassifier, HistologyClassifier
 
 def get_transforms(is_training: bool = False) -> transforms.Compose:
     """Get data transformations matching GigaPath's requirements."""
@@ -644,10 +615,24 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-    '--architecture',
-    choices=['gigapath', 'resnet18', 'swin_v2_b', 'convnext_large', 'densenet121', 'densenet169'],
-    default='gigapath',
-    help='Model architecture'
+        '--architecture',
+        choices=['gigapath', 'resnet18', 'swin_v2_b', 'convnext_large', 'densenet121', 'densenet169'],
+        default='gigapath',
+        help='Model architecture'
+    )
+    
+    # Reproducibility options
+    parser.add_argument(
+        '--seed', 
+        type=int,
+        default=42,
+        help='Random seed for reproducibility'
+    )
+    
+    parser.add_argument(
+        '--deterministic',
+        action='store_true',
+        help='Enable deterministic mode for reproducibility'
     )
     
     # Add path arguments
@@ -835,6 +820,15 @@ def main():
     # Setup logging
     setup_logging(output_dir)
     logging.info(f"Starting evaluation for {args.task} task on {args.test_split} split")
+    
+    # Set random seeds for reproducibility
+    # Import here to avoid circular imports
+    from src.models.training_utils import set_all_seeds
+    set_all_seeds(args.seed)
+    logging.info(f"Random seed set to {args.seed} for reproducible evaluation")
+    
+    if args.deterministic:
+        logging.info("Using deterministic mode for CUDA operations")
     
     # Log paths
     logging.info("Project paths:")

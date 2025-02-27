@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import logging
 import json
 import os
+import random
 from datetime import datetime
 import seaborn as sns
 from typing import Dict, List, Tuple, Set
@@ -116,7 +117,11 @@ class DataSplitter:
 
     def create_split(self, df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """Create train/val/test splits based on patient_id."""
+        # Set all random seeds for reproducibility
         np.random.seed(self.seed)
+        random.seed(self.seed)
+        # Log seeding information
+        logging.info(f"Set random seed to {self.seed} for reproducible data splitting")
         
         # Log initial statistics
         logging.info(f"\nInitial dataset statistics:")

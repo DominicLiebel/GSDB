@@ -30,6 +30,20 @@ if str(project_root) not in sys.path:
 from src.config.paths import get_project_paths, add_path_args
 
 class HistologyDataset(Dataset):
+    """Histology Image Dataset for tissue and inflammation classification.
+    
+    This Dataset loads histological images from pre-processed tiles and supports
+    both inflammation detection and tissue type classification tasks. The dataset
+    provides functionality to work with various splits (train/val/test) and
+    can handle multi-scanner setups with domain adaptation requirements.
+    
+    Features:
+        - Supports both inflammation and tissue type classification
+        - Handles different stains (HE, PAS, MG) with option to filter
+        - Provides detailed metadata with each sample for hierarchical analysis
+        - Validates tissue content of tiles for quality assurance
+    """
+    
     def __init__(self, split: str, transform=None, task: str = 'inflammation', 
                  he_only: bool = True, scanner1_only: bool = False, paths=None):
         """Initialize the Histology Dataset.
@@ -41,6 +55,10 @@ class HistologyDataset(Dataset):
             he_only (bool): If True, use only HE stained slides (default: True)
             scanner1_only (bool): If True, use only scanner 1 slides (default: False)
             paths (Dict[str, Path]): Dictionary of project paths (default: None)
+            
+        Raises:
+            ValueError: If an invalid split or task is provided
+            FileNotFoundError: If split file or image tiles cannot be found
         """
         self.split = split
         self.transform = transform
