@@ -650,6 +650,9 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path) -> None:
     """
     from sklearn.metrics import roc_curve, auc
     
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
     # Convert logits to probabilities
     if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
         probs = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
@@ -713,6 +716,82 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path) -> None:
         plt.legend()
         plt.grid(True, alpha=0.3)
         plt.savefig(output_dir / 'roc_curves.png', dpi=300)
+        plt.close()
+
+def plot_precision_recall_curve(df: pd.DataFrame, task: str, output_dir: Path) -> None:
+    """Plot precision-recall curves for different hierarchical levels.
+    
+    Args:
+        df: DataFrame with predictions
+        task: Classification task
+        output_dir: Directory to save plots
+    """
+    from sklearn.metrics import precision_recall_curve, average_precision_score
+    
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Convert logits to probabilities
+    if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
+        probs = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
+    else:
+        probs = df['raw_pred'].values
+    
+    # Calculate precision-recall curve for tile level
+    tile_precision, tile_recall, _ = precision_recall_curve(df['label'], probs)
+    tile_ap = average_precision_score(df['label'], probs)
+    
+    # Calculate precision-recall curve for slide/particle level
+    if task == 'inflammation':
+        slide_df = df.groupby('slide_name').agg({
+            'raw_pred': 'mean',
+            'label': 'first'
+        }).reset_index()
+        
+        if 'raw_pred' in slide_df.columns and (slide_df['raw_pred'].min() < 0 or slide_df['raw_pred'].max() > 1):
+            slide_probs = torch.sigmoid(torch.tensor(slide_df['raw_pred'].values)).numpy()
+        else:
+            slide_probs = slide_df['raw_pred'].values
+        
+        slide_precision, slide_recall, _ = precision_recall_curve(slide_df['label'], slide_probs)
+        slide_ap = average_precision_score(slide_df['label'], slide_probs)
+        
+        # Plot precision-recall curves
+        plt.figure(figsize=(10, 8))
+        plt.plot(tile_recall, tile_precision, label=f'Tile-level (AP = {tile_ap:.3f})')
+        plt.plot(slide_recall, slide_precision, label=f'Slide-level (AP = {slide_ap:.3f})')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curves for Different Hierarchical Levels')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.savefig(output_dir / 'precision_recall_curves.png', dpi=300)
+        plt.close()
+    
+    else:  # tissue task
+        particle_df = df.groupby(['slide_name', 'particle_id']).agg({
+            'raw_pred': 'mean',
+            'label': 'first'
+        }).reset_index()
+        
+        if 'raw_pred' in particle_df.columns and (particle_df['raw_pred'].min() < 0 or particle_df['raw_pred'].max() > 1):
+            particle_probs = torch.sigmoid(torch.tensor(particle_df['raw_pred'].values)).numpy()
+        else:
+            particle_probs = particle_df['raw_pred'].values
+        
+        particle_precision, particle_recall, _ = precision_recall_curve(particle_df['label'], particle_probs)
+        particle_ap = average_precision_score(particle_df['label'], particle_probs)
+        
+        # Plot precision-recall curves
+        plt.figure(figsize=(10, 8))
+        plt.plot(tile_recall, tile_precision, label=f'Tile-level (AP = {tile_ap:.3f})')
+        plt.plot(particle_recall, particle_precision, label=f'Particle-level (AP = {particle_ap:.3f})')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curves for Different Hierarchical Levels')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.savefig(output_dir / 'precision_recall_curves.png', dpi=300)
         plt.close()
 
 def main():
@@ -813,9 +892,16 @@ def main():
         # Save metrics using metrics_utils
         metrics_utils.save_metrics(metrics, output_dir)
         
-        # Create ROC curves
-        plot_roc_curves(metrics['predictions_df'] if 'predictions_df' in metrics else pd.DataFrame(metrics['combined_predictions']), 
-                       args.task, output_dir)
+        # Create ROC curves and precision-recall curves
+        df = metrics['predictions_df'] if 'predictions_df' in metrics else pd.DataFrame(metrics['combined_predictions'])
+        plot_roc_curves(df, args.task, output_dir)
+        
+        # Create precision-recall curves
+        try:
+            plot_precision_recall_curve(df, args.task, output_dir)
+            logging.info("Precision-recall curves saved successfully")
+        except Exception as e:
+            logging.warning(f"Failed to create precision-recall curves: {str(e)}")
         
         logging.info("Evaluation completed successfully!")
         

@@ -40,23 +40,73 @@ def calculate_metrics(y_true, y_pred, y_scores=None, prefix=''):
     """
     metrics = {}
     
-    # Calculate confusion matrix
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+    # Handle edge cases
+    if len(y_true) == 0 or len(y_pred) == 0:
+        metrics[f'{prefix}accuracy'] = 0
+        metrics[f'{prefix}sensitivity'] = 0  # Recall
+        metrics[f'{prefix}specificity'] = 0
+        metrics[f'{prefix}precision'] = 0
+        metrics[f'{prefix}f1'] = 0
+        if y_scores is not None:
+            metrics[f'{prefix}auroc'] = 0.5
+        return metrics
     
-    # Calculate metrics (returns values between 0 and 1)
-    metrics[f'{prefix}accuracy'] = accuracy_score(y_true, y_pred)
-    metrics[f'{prefix}sensitivity'] = tp / (tp + fn) if (tp + fn) > 0 else 0  # Recall/sensitivity
-    metrics[f'{prefix}specificity'] = tn / (tn + fp) if (tn + fp) > 0 else 0
-    metrics[f'{prefix}precision'] = precision_score(y_true, y_pred, zero_division=0)
-    metrics[f'{prefix}f1'] = f1_score(y_true, y_pred, zero_division=0)
+    # Handle single class case
+    unique_classes = np.unique(y_true)
+    if len(unique_classes) <= 1:
+        # All samples are from a single class
+        if unique_classes[0] == 1:  # All positives
+            tp = np.sum(y_pred == 1)
+            fn = np.sum(y_pred == 0)
+            fp = 0
+            tn = 0
+        else:  # All negatives
+            tp = 0
+            fn = 0
+            fp = np.sum(y_pred == 1)
+            tn = np.sum(y_pred == 0)
+            
+        # Calculate metrics
+        metrics[f'{prefix}accuracy'] = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
+        metrics[f'{prefix}sensitivity'] = tp / (tp + fn) if (tp + fn) > 0 else 0  # Recall/sensitivity
+        metrics[f'{prefix}specificity'] = tn / (tn + fp) if (tn + fp) > 0 else 0
+        metrics[f'{prefix}precision'] = tp / (tp + fp) if (tp + fp) > 0 else 0
+        metrics[f'{prefix}f1'] = 2 * tp / (2 * tp + fp + fn) if (2 * tp + fp + fn) > 0 else 0
+        
+        if y_scores is not None:
+            metrics[f'{prefix}auroc'] = 0.5  # Default for single class
+            
+        return metrics
     
-    # Calculate AUROC if scores are provided
-    if y_scores is not None:
-        try:
-            metrics[f'{prefix}auroc'] = roc_auc_score(y_true, y_scores)
-        except ValueError as e:
-            logging.warning(f"Could not calculate AUROC: {str(e)}")
-            metrics[f'{prefix}auroc'] = 0.5  # Default value for random classifier
+    # Normal case with multiple classes
+    try:
+        # Calculate confusion matrix
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+        
+        # Calculate metrics (returns values between 0 and 1)
+        metrics[f'{prefix}accuracy'] = accuracy_score(y_true, y_pred)
+        metrics[f'{prefix}sensitivity'] = tp / (tp + fn) if (tp + fn) > 0 else 0  # Recall/sensitivity
+        metrics[f'{prefix}specificity'] = tn / (tn + fp) if (tn + fp) > 0 else 0
+        metrics[f'{prefix}precision'] = precision_score(y_true, y_pred, zero_division=0)
+        metrics[f'{prefix}f1'] = f1_score(y_true, y_pred, zero_division=0)
+        
+        # Calculate AUROC if scores are provided
+        if y_scores is not None:
+            try:
+                metrics[f'{prefix}auroc'] = roc_auc_score(y_true, y_scores)
+            except ValueError as e:
+                logging.warning(f"Could not calculate AUROC: {str(e)}")
+                metrics[f'{prefix}auroc'] = 0.5  # Default value for random classifier
+    except Exception as e:
+        logging.warning(f"Error calculating metrics: {str(e)}")
+        # Provide default values
+        metrics[f'{prefix}accuracy'] = 0
+        metrics[f'{prefix}sensitivity'] = 0
+        metrics[f'{prefix}specificity'] = 0
+        metrics[f'{prefix}precision'] = 0
+        metrics[f'{prefix}f1'] = 0
+        if y_scores is not None:
+            metrics[f'{prefix}auroc'] = 0.5
     
     return metrics
 
