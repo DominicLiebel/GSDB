@@ -1,0 +1,16 @@
+2025-02-27 01:04:44,170 - INFO - Starting split creation at 2025-02-27 01:04:44.169912
+2025-02-27 01:04:44,170 - INFO - Using base directory: /mnt/data/dliebel/2024_dliebel/data
+2025-02-27 01:04:44,172 - INFO - 
+Initial dataset statistics:
+2025-02-27 01:04:44,172 - ERROR - Error during split creation: 'patient_id'
+Traceback (most recent call last):
+  File "/mnt/data/dliebel/2024_dliebel/src/data/create_splits.py", line 301, in main
+    splits = splitter.create_split(df)
+  File "/mnt/data/dliebel/2024_dliebel/src/data/create_splits.py", line 123, in create_split
+    logging.info(f"Total patients before exclusion: {df['patient_id'].nunique()}")
+                                                     ~~^^^^^^^^^^^^^^
+  File "/home/dliebel/miniconda3/envs/MA/lib/python3.13/site-packages/pandas/core/frame.py", line 4102, in __getitem__
+    indexer = self.columns.get_loc(key)
+  File "/home/dliebel/miniconda3/envs/MA/lib/python3.13/site-packages/pandas/core/indexes/range.py", line 417, in get_loc
+    raise KeyError(key)
+KeyError: 'patient_id'

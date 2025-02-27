@@ -90,14 +90,14 @@ common:
 
 ### Configuration Files
 
-All hyperparameters are stored in version-controlled YAML files:
+All hyperparameters are stored in YAML files:
 
 - `configs/data_config.yaml`: Data processing parameters
 - `configs/model_config.yaml`: Model training hyperparameters
 
 ### Pre-trained Models
 
-We provide pre-trained model weights for all reported experiments:
+We provide pre-trained model weights for all reported experiments: TODO!
 
 ```bash
 # Download pre-trained models
@@ -113,14 +113,26 @@ All models are evaluated using the same protocol with three test sets:
 
 ## Usage
 
+### Pre-processing Only
+
+To preprocess slides without training:
+
+```bash
+# Downsample whole slide images
+python src/data/preprocessing/downsize_wsi_to_png.py --base-dir /path/to/data
+
+# Annotate regions of interest
+python src/data/preprocessing/wsi_annotation.py
+
+# Extract tiles from annotated regions
+python src/data/extract_tiles.py --tile-size 256 --downsample 10 --overlap 64
+```
+
 ### Complete Pipeline
 
 To run the complete pipeline from raw slides to evaluation:
 
 ```bash
-# Process slide data
-python src/data/preprocessing/downsize_wsi_to_png.py --base-dir /path/to/data
-
 # Extract tiles
 python src/data/extract_tiles.py --base-dir /path/to/data
 
@@ -140,21 +152,6 @@ To optimize model hyperparameters:
 
 ```bash
 python src/models/tune.py --task inflammation --study-name inflammation_study --n-trials 100
-```
-
-### Pre-processing Only
-
-To preprocess slides without training:
-
-```bash
-# Downsample whole slide images
-python src/data/preprocessing/downsize_wsi_to_png.py --base-dir /path/to/data
-
-# Annotate regions of interest
-python src/data/preprocessing/wsi_annotation.py
-
-# Extract tiles from annotated regions
-python src/data/extract_tiles.py --tile-size 256 --downsample 10 --overlap 64
 ```
 
 ### Inference on New Data
@@ -220,6 +217,7 @@ Our best model achieves:
 | ConvNeXt Large | Tissue Type | 93.2% | 0.936 | 0.952 |
 | Swin V2 B | Inflammation | 87.2% | 0.893 | 0.926 |
 | GigaPath | Inflammation | 91.5% | 0.925 | 0.945 |
+...
 
 For detailed performance metrics, see `results/metrics/` directory after running evaluation.
 
@@ -241,14 +239,10 @@ If you use this codebase in your research, please cite our paper:
 
 ```bibtex
 @article{liebel2025gastric,
-  title={Automated Classification of Inflammation and Tissue Types in Gastric Histology Using Deep Learning},
-  author={Liebel, Dominic and [Other Authors]},
-  journal={[Journal Name]},
-  volume={[Volume]},
-  number={[Number]},
+  title={Developing a comprehensive dataset and baseline model for classification and generalizability testing of gastric whole slide images in computational pathology},
+  author={Liebel, Dominic},
   pages={[Pages]},
   year={2025},
-  publisher={[Publisher]}
 }
 ```
 

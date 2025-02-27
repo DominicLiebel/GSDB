@@ -1,0 +1,45 @@
+name: gsdb
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip=23.0
+  # PyTorch with CUDA support
+  - pytorch=2.0.1
+  - torchvision=0.15.2
+  - cudatoolkit=11.7
+  # Scientific computing
+  - numpy=1.24.3
+  - pandas=2.0.3
+  - scikit-learn=1.2.2
+  - scipy=1.10.1
+  # Visualization
+  - matplotlib=3.7.2
+  - seaborn=0.12.2
+  - plotly=5.15.0
+  # Image processing
+  - pillow=9.5.0
+  - openslide-python=1.2.0
+  - opencv=4.7.0
+  # Utilities
+  - tqdm=4.65.0
+  - yaml=0.2.5
+  - pyyaml=6.0
+  # Machine learning
+  - pip:
+    - timm==0.9.5
+    - optuna==3.2.0
+    - openslide-python==1.2.0
+    - shapely==2.0.1
+    - tensorboard==2.12.3
+    - jupyter==1.0.0
+    - ipywidgets==8.0.6
+    # Model loading utilities
+    - huggingface-hub==0.16.4
+    # Testing and development
+    - pytest==7.3.1
+    - black==23.3.0
+    - isort==5.12.0
+    - flake8==6.0.0
