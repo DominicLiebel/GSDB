@@ -20,6 +20,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from dataset import HistologyDataset
