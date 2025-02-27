@@ -503,6 +503,9 @@ def optimize_aggregation_strategy(df: pd.DataFrame, task: str = 'inflammation',
         'percentile_90': lambda x: np.percentile(x, 90),
         'top_k_mean_10': lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.1)):]) if len(x) > 0 else 0,
         'top_k_mean_20': lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.2)):]) if len(x) > 0 else 0,
+        'filter_90_mean': lambda x: np.mean(np.sort(x)[int(len(x)*0.9):]) if len(x) > 0 else 0,  # Filter bottom 90%, mean of top 10%
+        'filter_80_mean': lambda x: np.mean(np.sort(x)[int(len(x)*0.8):]) if len(x) > 0 else 0,  # Filter bottom 80%, mean of top 20%
+        'filter_70_mean': lambda x: np.mean(np.sort(x)[int(len(x)*0.7):]) if len(x) > 0 else 0,  # Filter bottom 70%, mean of top 30%
     }
     
     # Results dictionary to store metrics for each strategy
@@ -587,6 +590,23 @@ def optimize_aggregation_strategy(df: pd.DataFrame, task: str = 'inflammation',
     
     # Find the best strategy based on F1 score
     best_strategy = max(results.items(), key=lambda x: x[1]['f1'])
+    
+    # Log detailed information about all strategies
+    logging.info("\nAggregation Strategy Comparison:")
+    logging.info("--------------------------------")
+    # Sort strategies by F1 score in descending order
+    sorted_strategies = sorted(results.items(), key=lambda x: x[1]['f1'], reverse=True)
+    
+    for strategy_name, metrics in sorted_strategies:
+        logging.info(f"{strategy_name}:")
+        logging.info(f"  F1: {metrics['f1']:.4f}, Sens: {metrics['sensitivity']:.4f}, " +
+                   f"Spec: {metrics['specificity']:.4f}, Acc: {metrics['accuracy']:.4f}")
+    
+    # Log information about the new filtering strategies
+    logging.info("\nNew filtering strategy explanation:")
+    logging.info("- filter_90_mean: Removes bottom 90% of tiles with lowest activation, computes mean of top 10%")
+    logging.info("- filter_80_mean: Removes bottom 80% of tiles with lowest activation, computes mean of top 20%")
+    logging.info("- filter_70_mean: Removes bottom 70% of tiles with lowest activation, computes mean of top 30%")
     
     # Create visualization if output directory provided
     if output_dir:

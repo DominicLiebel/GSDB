@@ -239,9 +239,23 @@ def evaluate_model(
             agg_func = lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.1)):]) if len(x) > 0 else 0
         elif best_strategy == 'top_k_mean_20':
             agg_func = lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.2)):]) if len(x) > 0 else 0
+        elif best_strategy == 'filter_90_mean':
+            agg_func = lambda x: np.mean(np.sort(x)[int(len(x)*0.9):]) if len(x) > 0 else 0
+        elif best_strategy == 'filter_80_mean':
+            agg_func = lambda x: np.mean(np.sort(x)[int(len(x)*0.8):]) if len(x) > 0 else 0
+        elif best_strategy == 'filter_70_mean':
+            agg_func = lambda x: np.mean(np.sort(x)[int(len(x)*0.7):]) if len(x) > 0 else 0
         else:
             logging.warning(f"Unknown aggregation strategy: {best_strategy}, defaulting to mean")
             agg_func = np.mean
+            
+        # Log the description of the strategy
+        if 'filter_90_mean' in best_strategy:
+            logging.info("Strategy description: Filter out 90% of tiles with lowest activation, compute mean of top 10%")
+        elif 'filter_80_mean' in best_strategy:
+            logging.info("Strategy description: Filter out 80% of tiles with lowest activation, compute mean of top 20%")
+        elif 'filter_70_mean' in best_strategy:
+            logging.info("Strategy description: Filter out 70% of tiles with lowest activation, compute mean of top 30%")
         
         # Calculate probabilities from logits if needed
         if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
@@ -630,7 +644,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
     '--architecture',
-    choices=['gigapath', 'resnet18', 'swin_v2_b', 'convnext_large'],
+    choices=['gigapath', 'resnet18', 'swin_v2_b', 'convnext_large', 'densenet121', 'densenet169'],
     default='gigapath',
     help='Model architecture'
     )

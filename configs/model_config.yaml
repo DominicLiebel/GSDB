@@ -24,6 +24,10 @@ architectures:
     output_features: 1536
   swin_v2_b:
     output_features: 1024
+  densenet121:
+    output_features: 1024
+  densenet169:
+    output_features: 1664
 
 # Inflammation task configurations
 inflammation:
@@ -64,6 +68,86 @@ inflammation:
           kernel_size: 3
         random_affine:
           enabled: false               # Not specified as used in the optimal combination
+          
+  # DenseNet121 configuration
+  densenet121:
+    architecture:
+      name: densenet121
+      pretrained: true
+      feature_extraction: false
+    batch_size: 32
+    dropout_rate: 0.2
+    epochs: 30
+    optimizer:
+      name: AdamW
+      learning_rate: 1e-4
+      weight_decay: 1e-5
+    pos_weight: 0.7
+    scheduler:
+      enabled: true
+      name: CosineAnnealingLR
+      T_max: 30
+    early_stopping:
+      enabled: true
+      patience: 10
+    transforms:
+      training:
+        random_resized_crop:
+          size: 224
+          scale: [0.8, 1.0]
+        random_horizontal_flip: true
+        random_vertical_flip: true
+        color_jitter:
+          brightness: 0.1
+          contrast: 0.1
+        random_rotation:
+          enabled: true
+          degrees: 45
+        random_blur:
+          enabled: true
+          kernel_size: 3
+        random_affine:
+          enabled: false
+          
+  # DenseNet169 configuration
+  densenet169:
+    architecture:
+      name: densenet169
+      pretrained: true
+      feature_extraction: false
+    batch_size: 24
+    dropout_rate: 0.3
+    epochs: 30
+    optimizer:
+      name: AdamW
+      learning_rate: 5e-5
+      weight_decay: 1e-5
+    pos_weight: 0.7
+    scheduler:
+      enabled: true
+      name: CosineAnnealingLR
+      T_max: 30
+    early_stopping:
+      enabled: true
+      patience: 10
+    transforms:
+      training:
+        random_resized_crop:
+          size: 224
+          scale: [0.8, 1.0]
+        random_horizontal_flip: true
+        random_vertical_flip: true
+        color_jitter:
+          brightness: 0.1
+          contrast: 0.1
+        random_rotation:
+          enabled: true
+          degrees: 45
+        random_blur:
+          enabled: true
+          kernel_size: 3
+        random_affine:
+          enabled: false
 
   # Other models remain unchanged
   gigapath:

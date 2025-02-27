@@ -309,14 +309,33 @@ class HistologyClassifier(nn.Module):
                 nn.Linear(in_features, self.num_classes)
             )
             
+        elif model_name == 'densenet121':
+            from torchvision.models import densenet121, DenseNet121_Weights
+            self.backbone = densenet121(weights=DenseNet121_Weights.DEFAULT)
+            # Modify classifier head
+            in_features = self.backbone.classifier.in_features
+            self.backbone.classifier = nn.Sequential(
+                nn.Dropout(p=self.dropout_rate),
+                nn.Linear(in_features, self.num_classes)
+            )
+            
+        elif model_name == 'densenet169':
+            from torchvision.models import densenet169, DenseNet169_Weights
+            self.backbone = densenet169(weights=DenseNet169_Weights.DEFAULT)
+            # Modify classifier head
+            in_features = self.backbone.classifier.in_features
+            self.backbone.classifier = nn.Sequential(
+                nn.Dropout(p=self.dropout_rate),
+                nn.Linear(in_features, self.num_classes)
+            )
+            
         elif model_name == 'convnext_large':
             from torchvision.models import convnext_large, ConvNeXt_Large_Weights
             self.backbone = convnext_large(weights=ConvNeXt_Large_Weights.DEFAULT)
             # Modify classifier head
             self.backbone.classifier = nn.Sequential(
-                nn.AdaptiveAvgPool2d(1),
+                nn.LayerNorm(1536),
                 nn.Flatten(1),
-                nn.Dropout(p=self.dropout_rate),
                 nn.Linear(1536, self.num_classes)
             )
             
@@ -324,14 +343,15 @@ class HistologyClassifier(nn.Module):
             from torchvision.models import swin_v2_b, Swin_V2_B_Weights
             self.backbone = swin_v2_b(weights=Swin_V2_B_Weights.DEFAULT)
             # Modify classifier head
-            in_features = self.backbone.head = nn.Sequential(
+            in_features = self.backbone.head.in_features
+            self.backbone.head = nn.Sequential(
                 nn.LayerNorm(in_features),
                 nn.Dropout(p=self.dropout_rate),
                 nn.Linear(in_features, self.num_classes)
             )
             
         else:
-            raise ValueError(f"Unsupported model: {model_name}. Use 'resnet18', 'convnext_large', or 'swin_v2_b'. For GigaPath, use GigaPathClassifier.")
+            raise ValueError(f"Unsupported model: {model_name}. Use 'resnet18', 'densenet121', 'densenet169', 'swin_v2_b', or 'convnext_large'. For GigaPath, use GigaPathClassifier.")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the model."""
@@ -771,7 +791,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        choices=['resnet18', 'gigapath', 'convnext_large', 'swin_v2_b'],
+        choices=['resnet18', 'gigapath', 'convnext_large', 'swin_v2_b', 'densenet121', 'densenet169'],
         help="Model architecture to use"
     )
     parser.add_argument(

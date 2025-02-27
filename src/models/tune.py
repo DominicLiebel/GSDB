@@ -168,7 +168,7 @@ class ModelTracker:
         
         # Initialize tracking dictionary for only the supported models
         for model_name in [
-            'resnet18', 'convnext_large', 'swin_v2_b', 'gigapath'
+            'resnet18', 'convnext_large', 'swin_v2_b', 'gigapath', 'densenet121', 'densenet169'
         ]:
             self.best_models[model_name] = {
                 'val_loss': float('inf'),
@@ -308,7 +308,9 @@ def suggest_hyperparameters(trial: Trial, task: str) -> Dict:
         'resnet18',        # Baseline model for comparison
         'swin_v2_b',       # Modern vision transformer
         'convnext_large',  # Modern CNN architecture
-        'gigapath'         # Prov-GigaPath foundation model
+        'gigapath',        # Prov-GigaPath foundation model
+        'densenet121',     # DenseNet medium size
+        'densenet169'      # DenseNet larger size
     ])
     
     # Optimize batch size based on model
@@ -318,6 +320,10 @@ def suggest_hyperparameters(trial: Trial, task: str) -> Dict:
         batch_size = trial.suggest_int('batch_size', 32, 96, step=32)
     elif model == 'gigapath':
         batch_size = trial.suggest_int('batch_size', 16, 64, step=16)
+    elif model == 'densenet121':
+        batch_size = trial.suggest_int('batch_size', 32, 96, step=32)
+    elif model == 'densenet169':
+        batch_size = trial.suggest_int('batch_size', 24, 64, step=8)
     else:  # resnet18
         batch_size = trial.suggest_int('batch_size', 64, 128, step=32)
     
@@ -325,6 +331,9 @@ def suggest_hyperparameters(trial: Trial, task: str) -> Dict:
     if model == 'gigapath':
         # GigaPath only trains the classifier head, so can use a higher learning rate
         lr = trial.suggest_float('learning_rate', 5e-4, 1e-2, log=True)
+    elif model == 'densenet121' or model == 'densenet169':
+        # DenseNet models typically need lower learning rates
+        lr = trial.suggest_float('learning_rate', 5e-5, 2e-4, log=True)
     else:
         lr = trial.suggest_float('learning_rate', 1e-4, 5e-3, log=True)
     
@@ -367,7 +376,7 @@ def objective(trial: Trial, args: argparse.Namespace, model_tracker: ModelTracke
             )
         else:
             # Only use supported models
-            if config['model'] not in ['resnet18', 'convnext_large', 'swin_v2_b']:
+            if config['model'] not in ['resnet18', 'convnext_large', 'swin_v2_b', 'densenet121', 'densenet169']:
                 raise ValueError(f"Unsupported model: {config['model']}")
                 
             model = HistologyClassifier(
