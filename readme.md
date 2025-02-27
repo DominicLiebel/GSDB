@@ -253,5 +253,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 We thank the pathology department for providing annotated histological samples.
-
-This research was supported by [funding sources or grant numbers].

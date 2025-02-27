@@ -2,8 +2,8 @@
     "total_slides": 360,
     "inflammation_distribution": {
         "inflamed": 198,
-        "noninflamed": 129,
-        "null": 23,
+        "noninflamed": 130,
+        "null": 22,
         "other": 10
     },
     "tissue_distribution": {

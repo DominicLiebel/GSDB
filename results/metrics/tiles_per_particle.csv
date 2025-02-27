@@ -1150,7 +1150,7 @@ slide_name,slide_id,patient_id,scanner_id,stain,particle_id,tiles_per_particle,t
 136_110_1_HE,136,110,1,HE,6284d8f4-a7fe-4995-b32f-bde0b9a2a49d,11,intermediate,noninflamed
 306_256_2_MG,306,256,2,MG,b51709cf-9d21-4f03-8243-c78bacb2dd7a,16,antrum,inflamed
 124_98_1_HE,124,98,1,HE,f409f30a-fd66-4d12-a4d1-f7bad10079e2,17,corpus,noninflamed
-99_73_1_HE,99,73,1,HE,e07ff99c-56da-46f3-a5ed-d1c5c5193e67,18,intermediate,
+99_73_1_HE,99,73,1,HE,e07ff99c-56da-46f3-a5ed-d1c5c5193e67,18,intermediate,noninflamed
 212_186_1_HE,212,186,1,HE,ea78aa2a-f36f-46b5-8f23-639a93f9d952,14,antrum,noninflamed
 246_220_1_HE,246,220,1,HE,a2076060-39e9-4a2a-baf0-f713252323df,39,corpus,noninflamed
 4_2_1_PAS,4,2,1,PAS,1a370ff4-69cc-44a3-8bee-f5ef7cf06961,24,corpus,inflamed
@@ -1294,7 +1294,7 @@ slide_name,slide_id,patient_id,scanner_id,stain,particle_id,tiles_per_particle,t
 154_128_1_HE,154,128,1,HE,29d283c9-9c8d-41b1-a88d-2b20836eeaac,17,antrum,noninflamed
 125_99_1_HE,125,99,1,HE,a2bc6e9a-c168-4b81-a554-eced70688f09,18,antrum,inflamed
 211_185_1_PAS,211,185,1,PAS,1ed2c840-9b6d-4463-bfe7-df2665c894e6,25,antrum,inflamed
-99_73_1_HE,99,73,1,HE,2a45399f-c18e-488a-b893-37e8f97b8a6f,15,intermediate,
+99_73_1_HE,99,73,1,HE,2a45399f-c18e-488a-b893-37e8f97b8a6f,15,intermediate,noninflamed
 175_149_1_HE,175,149,1,HE,66de2ccd-d4f2-4113-8c5b-8bfa508ee68f,11,corpus,inflamed
 192_166_1_HE,192,166,1,HE,49a776e5-8894-4431-ba2d-d2d7afe6673a,14,corpus,noninflamed
 295_253_2_HE,295,253,2,HE,5d365010-786a-4520-b819-9b66089c2aef,17,antrum,inflamed
@@ -1312,7 +1312,7 @@ slide_name,slide_id,patient_id,scanner_id,stain,particle_id,tiles_per_particle,t
 73_52_1_MG,73,52,1,MG,c5cc2130-608c-4f91-8e9c-41936434250b,7,antrum,inflamed
 103_77_1_HE,103,77,1,HE,1a643c5e-afdf-41b2-9919-d26b95f04ad7,14,intermediate,inflamed
 348_270_2_MG,348,270,2,MG,5cba42d7-f7f8-4443-9bff-ac26b4fd278d,39,corpus,noninflamed
-99_73_1_HE,99,73,1,HE,065613b7-959e-4ab4-80ec-242d01a9c9b8,18,intermediate,
+99_73_1_HE,99,73,1,HE,065613b7-959e-4ab4-80ec-242d01a9c9b8,18,intermediate,noninflamed
 171_145_1_HE,171,145,1,HE,7c61c5aa-9215-405c-9890-685bfe5922e9,8,other,noninflamed
 248_222_1_HE,248,222,1,HE,956f4477-e995-4dd2-b3e5-011d102fd932,12,intermediate,noninflamed
 125_99_1_HE,125,99,1,HE,d1f6b973-cc68-4c8a-bd21-4a6abdd720ca,26,intermediate,inflamed
@@ -1329,7 +1329,7 @@ slide_name,slide_id,patient_id,scanner_id,stain,particle_id,tiles_per_particle,t
 293_252_2_PAS,293,252,2,PAS,62a60763-54cc-4622-8be5-ebf2bb86b2f3,19,antrum,inflamed
 1_1_1_HE,1,1,1,HE,75fa0dc2-350e-402c-8523-9dec63a9a422,11,corpus,inflamed
 43_31_1_HE,43,31,1,HE,5eba2adb-6b9a-4015-8f97-7d7918ecd60f,16,antrum,inflamed
-99_73_1_HE,99,73,1,HE,6dd590d8-6b03-4499-9ce8-15f4799c3c84,16,intermediate,
+99_73_1_HE,99,73,1,HE,6dd590d8-6b03-4499-9ce8-15f4799c3c84,16,intermediate,noninflamed
 288_250_2_MG,288,250,2,MG,397aa696-679b-4330-a1bc-da18b610003a,10,corpus,inflamed
 280_248_2_HE,280,248,2,HE,45efea92-ee60-4ba3-b957-3e84303145ae,14,corpus,inflamed
 91_65_1_PAS,91,65,1,PAS,8b937fa7-92de-4d85-bdb1-499256ab19b4,12,corpus,other
@@ -1928,7 +1928,7 @@ slide_name,slide_id,patient_id,scanner_id,stain,particle_id,tiles_per_particle,t
 308_257_2_PAS,308,257,2,PAS,2ca0f490-34fb-4bd2-ade7-6f0a49637a3f,19,antrum,inflamed
 299_254_2_PAS,299,254,2,PAS,f7fb78eb-5809-4269-a17a-95d6d6ff5ac9,17,corpus,inflamed
 286_250_2_HE,286,250,2,HE,7f48f60d-bfca-4d7c-bcb4-826cba85bd94,17,corpus,inflamed
-99_73_1_HE,99,73,1,HE,4c581ac4-4b92-4072-82f4-c79e8ddd567a,16,intermediate,
+99_73_1_HE,99,73,1,HE,4c581ac4-4b92-4072-82f4-c79e8ddd567a,16,intermediate,noninflamed
 273_245_2_MG,273,245,2,MG,5be9e918-7890-4739-9a7b-2e731ea2bab5,16,corpus,inflamed
 346_270_2_HE,346,270,2,HE,cd4664e3-d2ab-4551-a468-72894439cb81,21,intermediate,noninflamed
 42_30_1_HE,42,30,1,HE,a3a1fd5e-b1a1-41b9-890e-5dc1d7b48f35,14,other,other
@@ -2246,7 +2246,7 @@ slide_name,slide_id,patient_id,scanner_id,stain,particle_id,tiles_per_particle,t
 103_77_1_HE,103,77,1,HE,f8e2f997-584b-4c30-b151-9f30522fed39,9,corpus,inflamed
 277_247_2_HE,277,247,2,HE,9aa6f92c-0145-432d-8492-8f926ba92c14,9,antrum,inflamed
 323_262_2_PAS,323,262,2,PAS,3b42b656-d15d-4ccc-a679-bc1ea8deb25c,8,antrum,inflamed
-99_73_1_HE,99,73,1,HE,f5dbeb31-c698-419f-98d6-1fbd7fd8d63b,18,intermediate,
+99_73_1_HE,99,73,1,HE,f5dbeb31-c698-419f-98d6-1fbd7fd8d63b,18,intermediate,noninflamed
 28_20_1_HE,28,20,1,HE,aa6f0bbb-93d7-40d3-8dc0-6b1e822b3870,14,corpus,inflamed
 226_200_1_HE,226,200,1,HE,181c9891-2796-4421-b216-7444d0abf5c5,19,corpus,noninflamed
 159_133_1_HE,159,133,1,HE,e7b12c5c-5dab-4178-b9e8-56b165b71b72,7,antrum,inflamed
@@ -2675,7 +2675,7 @@ slide_name,slide_id,patient_id,scanner_id,stain,particle_id,tiles_per_particle,t
 273_245_2_MG,273,245,2,MG,c3b99633-37ac-4df1-950a-cfe67b283faa,6,corpus,inflamed
 66_47_1_MG,66,47,1,MG,37f7150a-ff0f-4065-9ef1-2c90f2d3e960,9,antrum,inflamed
 111_85_1_HE,111,85,1,HE,6127e68c-a48a-42e4-8bc0-228d1caa8abb,16,corpus,inflamed
-99_73_1_HE,99,73,1,HE,1ef9216e-e60c-46b4-afb4-8db0b981c042,10,intermediate,
+99_73_1_HE,99,73,1,HE,1ef9216e-e60c-46b4-afb4-8db0b981c042,10,intermediate,noninflamed
 301_255_2_HE,301,255,2,HE,4d8e0dd6-aad4-4877-9c3d-822255869bae,6,antrum,inflamed
 145_119_1_HE,145,119,1,HE,b9aa3d21-f81f-49a9-a5b9-6c4fb1ae47ba,10,corpus,noninflamed
 70_50_1_HE,70,50,1,HE,8c64db25-d61a-4895-b50e-a4bf659895f4,17,corpus,inflamed
@@ -2815,7 +2815,7 @@ slide_name,slide_id,patient_id,scanner_id,stain,particle_id,tiles_per_particle,t
 199_173_1_HE,199,173,1,HE,cd4a6242-2c77-4b5d-a83a-7f297d638fb7,7,antrum,inflamed
 186_160_1_HE,186,160,1,HE,1a82496c-9f31-4443-b6d5-418b102e8471,14,corpus,noninflamed
 316_260_2_HE,316,260,2,HE,877e0b78-8354-42ea-84d7-ec5af7a276ee,29,intermediate,inflamed
-99_73_1_HE,99,73,1,HE,d353e669-cb56-4a2e-9aba-92281c8c1fe3,12,intermediate,
+99_73_1_HE,99,73,1,HE,d353e669-cb56-4a2e-9aba-92281c8c1fe3,12,intermediate,noninflamed
 4_2_1_PAS,4,2,1,PAS,6da02e09-2bc4-47f1-b8fe-ec354f3bd684,17,corpus,inflamed
 296_253_2_PAS,296,253,2,PAS,44113af6-eca3-4b87-9ecb-fad2102e642b,16,antrum,inflamed
 7_5_1_HE,7,5,1,HE,043f1821-96ae-48a3-8ba4-09992cbf1d12,1,corpus,other
