@@ -102,6 +102,94 @@ def find_optimal_threshold(y_true: List, y_prob: List) -> Tuple[float, float, fl
     
     return optimal_threshold, sensitivity, specificity
 
+def calculate_basic_metrics(
+    labels: List,
+    preds: List,
+    raw_preds: Optional[List] = None
+) -> Dict:
+    """Calculate basic classification metrics.
+    
+    Args:
+        labels: Ground truth labels
+        preds: Binary predictions
+        raw_preds: Raw prediction scores/logits for AUC calculation
+        
+    Returns:
+        Dict containing metrics (as percentages)
+    """
+    metrics = {}
+    
+    # Convert to numpy arrays if needed
+    labels = np.array(labels)
+    preds = np.array(preds)
+    
+    # Handle empty arrays or arrays with single class
+    if len(labels) == 0 or len(preds) == 0:
+        logging.warning("Empty labels or predictions array")
+        metrics['accuracy'] = 0
+        metrics['sensitivity'] = 0
+        metrics['specificity'] = 0
+        metrics['precision'] = 0
+        metrics['f1'] = 0
+        if raw_preds is not None:
+            metrics['auc'] = 50  # Default for random classifier
+        return metrics
+    
+    # Check if only one class is present
+    unique_labels = np.unique(labels)
+    if len(unique_labels) <= 1:
+        # If only one class (all positives or all negatives)
+        if unique_labels[0] == 1:  # all positives
+            # All true positives if predictions match, else false negatives
+            tp = np.sum(preds == 1)
+            fn = np.sum(preds == 0)
+            fp = 0
+            tn = 0
+        else:  # all negatives
+            # All true negatives if predictions match, else false positives
+            tn = np.sum(preds == 0)
+            fp = np.sum(preds == 1)
+            tp = 0
+            fn = 0
+    else:
+        # Calculate confusion matrix normally when both classes are present
+        cm = confusion_matrix(labels, preds)
+        if cm.size == 4:  # 2x2 matrix
+            tn, fp, fn, tp = cm.ravel()
+        else:
+            # Handle unexpected matrix shape (should not happen)
+            logging.warning(f"Unexpected confusion matrix shape: {cm.shape}")
+            metrics['accuracy'] = np.mean(labels == preds) * 100
+            metrics['sensitivity'] = 0
+            metrics['specificity'] = 0
+            metrics['precision'] = 0
+            metrics['f1'] = 0
+            if raw_preds is not None:
+                metrics['auc'] = 50
+            return metrics
+    
+    # Calculate metrics as percentages
+    metrics['accuracy'] = 100 * (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
+    metrics['sensitivity'] = 100 * tp / (tp + fn) if (tp + fn) > 0 else 0
+    metrics['specificity'] = 100 * tn / (tn + fp) if (tn + fp) > 0 else 0
+    metrics['precision'] = 100 * tp / (tp + fp) if (tp + fp) > 0 else 0
+    
+    # Calculate F1 score
+    if tp + fp + fn == 0:
+        metrics['f1'] = 0
+    else:
+        metrics['f1'] = 100 * (2 * tp) / (2 * tp + fp + fn)
+    
+    # Calculate AUC if raw predictions are provided
+    if raw_preds is not None:
+        try:
+            metrics['auc'] = 100 * roc_auc_score(labels, raw_preds)
+        except ValueError as e:
+            logging.warning(f"Could not calculate AUC: {str(e)}")
+            metrics['auc'] = 50  # Default for random classifier
+    
+    return metrics
+
 def calculate_hierarchical_metrics(
     df: pd.DataFrame,
     split: str,

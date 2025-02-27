@@ -116,6 +116,20 @@ def validate(model: nn.Module,
     all_raw_preds = []
     metadata = []
     
+    # Handle empty validation set
+    if len(val_loader) == 0:
+        logging.warning("Validation dataloader is empty!")
+        metrics = {
+            'loss': 0.0,
+            'accuracy': 0.0,
+            'sensitivity': 0.0,
+            'specificity': 0.0,
+            'precision': 0.0,
+            'f1': 0.0,
+            'auc': 50.0
+        }
+        return metrics
+    
     with torch.no_grad():
         for inputs, labels, batch_metadata in tqdm(val_loader, desc="Validating", leave=False):
             inputs = inputs.to(device)
@@ -145,16 +159,7 @@ def validate(model: nn.Module,
     )
     
     # Add additional metrics
-    metrics['loss'] = total_loss / len(val_loader)
-    
-    # Calculate confusion matrix metrics directly
-    tn, fp, fn, tp = confusion_matrix(all_labels, all_preds).ravel()
-    total = len(all_labels)
-    
-    # Ensure all required metrics are present
-    metrics['accuracy'] = 100 * (tp + tn) / total if total > 0 else 0
-    metrics['sensitivity'] = 100 * tp / (tp + fn) if (tp + fn) > 0 else 0
-    metrics['specificity'] = 100 * tn / (tn + fp) if (tn + fp) > 0 else 0
+    metrics['loss'] = total_loss / len(val_loader) if len(val_loader) > 0 else 0.0
     
     # Add a log message showing the primary metrics
     logging.debug(f"Validation metrics - Loss: {metrics['loss']:.4f}, Acc: {metrics['accuracy']:.2f}%, " + 

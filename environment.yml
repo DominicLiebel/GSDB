@@ -9,6 +9,7 @@ channels:
 dependencies:
   - pip=25.0.1
   - pytorch=2.6
+  - torchvision=0.21.0
   - kernel-headers_linux-64=3.10.0=h57e8cba_10
   - python_abi=3.9=2_cp39
   - pytorch-mutex=1.0=cuda

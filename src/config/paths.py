@@ -60,7 +60,7 @@ def get_project_paths(base_dir: Optional[Path] = None) -> Dict[str, Path]:
     
     paths = {
         "BASE_DIR": base_dir,
-        "DATA_DIR": base_dir / "data",
+        "DATA_DIR": base_dir,
         "RAW_DIR": base_dir / "data/raw",
         "PROCESSED_DIR": base_dir / "data/processed",
         "SPLITS_DIR": base_dir / "data/splits",
@@ -74,9 +74,8 @@ def get_project_paths(base_dir: Optional[Path] = None) -> Dict[str, Path]:
         "TUNING_DIR": base_dir / "results/tuning"
     }
     
-    # Create directories if they don't exist
-    for path_name, path in paths.items():
-        path.mkdir(parents=True, exist_ok=True)
+    # Don't automatically create directories
+    # Only create them when actually needed
     
     return paths
 

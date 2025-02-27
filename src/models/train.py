@@ -588,7 +588,7 @@ def train_model(args, paths):
     early_stopping = None
     if config.get('early_stopping', {}).get('enabled', False):
         patience = config['early_stopping'].get('patience', 10)
-        early_stopping = EarlyStopping(patience=patience, mode='min')
+        early_stopping = training_utils.EarlyStopping(patience=patience, mode='min')
         logging.info(f"Early stopping enabled with patience {patience}")
     
     # Create datasets and dataloaders with transforms from config
