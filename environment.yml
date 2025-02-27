@@ -8,25 +8,23 @@ channels:
   - https://repo.anaconda.com/pkgs/r
 dependencies:
   - pip=25.0.1
-  - pytorch=2.6
-  - torchvision=0.21.0
-  - kernel-headers_linux-64=3.10.0=h57e8cba_10
-  - python_abi=3.9=2_cp39
-  - pytorch-mutex=1.0=cuda
-  - charset-normalizer=3.3.2=pyhd3eb1b0_0
-  - cuda-version=12.4=hbda6634_3
-  - colorama=0.4.6=pyhd8ed1ab_1
-  - alembic=1.14.1=pyhd8ed1ab_0
-  - mako=1.3.9=pyhd8ed1ab_0
-  - _sysroot_linux-64_curr_repodata_hack=3=haa98f57_10
-  - zipp=3.21.0=pyhd8ed1ab_1
-  - cuda-cccl_linux-64=12.4.127=h06a4308_2
-  - importlib-metadata=8.6.1=pyha770c72_0
-  - cuda-driver-dev_linux-64=12.4.127=hd681fbe_0
-  - optuna=4.2.1=pyhd8ed1ab_0
-  - tqdm=4.67.1=pyhd8ed1ab_1
-  - sysroot_linux-64=2.17=h57e8cba_10
-  - colorlog=6.9.0=pyh707e725_1
+  - python=3.9
+  - pytorch=2.0
+  - torchvision=0.15.0
+  - cudatoolkit=11.7
+  - pillow=10.0.0
+  - libjpeg-turbo
+  - libpng
+  - opencv
+  - optuna=4.2.1
+  - tqdm=4.67.1
+  - colorlog=6.9.0
+  - numpy
+  - matplotlib
+  - pandas
+  - scikit-learn
+  - scikit-image
+  - seaborn
   - pip:
       - absl-py==2.1.0
       - annotated-types==0.7.0
