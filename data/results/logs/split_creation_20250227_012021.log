@@ -1,8 +1,8 @@
-2025-02-27 01:04:44,170 - INFO - Starting split creation at 2025-02-27 01:04:44.169912
-2025-02-27 01:04:44,170 - INFO - Using base directory: /mnt/data/dliebel/2024_dliebel/data
-2025-02-27 01:04:44,172 - INFO - 
+2025-02-27 01:20:21,522 - INFO - Starting split creation at 2025-02-27 01:20:21.522603
+2025-02-27 01:20:21,523 - INFO - Using base directory: /mnt/data/dliebel/2024_dliebel/data
+2025-02-27 01:20:21,524 - INFO - 
 Initial dataset statistics:
-2025-02-27 01:04:44,172 - ERROR - Error during split creation: 'patient_id'
+2025-02-27 01:20:21,524 - ERROR - Error during split creation: 'patient_id'
 Traceback (most recent call last):
   File "/mnt/data/dliebel/2024_dliebel/src/data/create_splits.py", line 301, in main
     splits = splitter.create_split(df)
