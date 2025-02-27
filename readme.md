@@ -219,7 +219,7 @@ Our best model achieves:
 | GigaPath | Inflammation | 91.5% | 0.925 | 0.945 |
 ...
 
-For detailed performance metrics, see `results/metrics/` directory after running evaluation.
+For detailed performance metrics, see `results/evaluations/` directory after running evaluation.
 
 ## Contributing
 

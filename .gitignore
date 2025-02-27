@@ -3,7 +3,6 @@ data/raw/archive/2023_thempel
 data/raw/archive/slides
 data/raw/slides
 data/processed
-data/splits
 results/evaluations
 results/figures
 results/logs
