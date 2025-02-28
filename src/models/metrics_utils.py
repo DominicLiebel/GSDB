@@ -768,14 +768,27 @@ def save_metrics(metrics: Dict, output_dir: Path) -> None:
     # Create output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Save JSON format
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = output_dir / f"metrics_{timestamp}.json"
+    # Save JSON format - use a standard name for the statistics.json file
+    # This is used by the compare_roc_curves.py script
+    stats_path = output_dir / "statistics.json"
     
-    with open(output_file, 'w') as f:
+    with open(stats_path, 'w') as f:
         json.dump(metrics_copy, f, indent=2)
     
-    logging.info(f"Metrics saved to: {output_file}")
+    logging.info(f"Metrics saved to: {stats_path}")
+    
+    # Also save with timestamp for versioning
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamped_file = output_dir / f"metrics_{timestamp}.json"
+    
+    with open(timestamped_file, 'w') as f:
+        json.dump(metrics_copy, f, indent=2)
+    
+    # Save DataFrame predictions if present
+    if 'predictions_df' in metrics:
+        predictions_path = output_dir / "predictions.csv"
+        metrics['predictions_df'].to_csv(predictions_path, index=False)
+        logging.info(f"Predictions saved to: {predictions_path}")
     
     # Create human-readable summary
     create_summary_file(metrics, output_dir)

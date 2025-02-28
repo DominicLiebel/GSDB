@@ -49,7 +49,8 @@ def evaluate_model(
     split: str,
     device: torch.device,
     output_dir: Optional[Path] = None,
-    validation_thresholds: Optional[Dict] = None  # Add this parameter
+    validation_thresholds: Optional[Dict] = None, 
+    save_predictions: bool = True
 ) -> Dict:
     """Evaluate model at appropriate hierarchical levels.
     
@@ -798,6 +799,7 @@ def main():
         )
         
         # Save metrics using metrics_utils
+        # This will save both statistics.json and predictions.csv
         metrics_utils.save_metrics(metrics, output_dir)
         
         # Create ROC curves and precision-recall curves
