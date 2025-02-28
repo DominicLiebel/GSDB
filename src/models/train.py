@@ -531,7 +531,7 @@ def train_model(args, paths):
             logging.info(f"Model saved with seed={args.seed}, deterministic={args.deterministic}")
             
     # Save final training history
-    history_path = paths["RESULTS_DIR"] / f"training_history_{args.task}_{model_name}.json"
+    history_path = paths["MODELS_DIR"] / f"training_history_{args.task}_{model_name}.json"
     with open(history_path, 'w') as f:
         json.dump(history, f, indent=2)
         
