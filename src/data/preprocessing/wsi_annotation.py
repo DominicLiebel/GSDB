@@ -16,6 +16,7 @@ import sys
 import cv2
 from skimage import measure
 import threading
+import traceback
 from queue import Queue
 
 

@@ -124,7 +124,7 @@ def evaluate_model(
     logging.info(f"Raw logits min: {df['raw_pred'].min():.3f}")
     logging.info(f"Raw logits max: {df['raw_pred'].max():.3f}")
     
-    # FIXED: Always use validation thresholds or calculate them if not provided
+    # Always use validation thresholds or calculate them if not provided
     if validation_thresholds is None:
         logging.warning("No validation thresholds provided. Calculating thresholds from validation data...")
         # Calculate optimal thresholds on validation data - never on test data

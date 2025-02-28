@@ -9,6 +9,7 @@ results/logs
 results/models
 results/tables
 results/tuning
+results/plots
 src/models/__pycache__
 src/config/__pycache__
 src/models/architectures/__pycache__

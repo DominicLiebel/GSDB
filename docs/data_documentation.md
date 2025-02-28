@@ -74,19 +74,20 @@ The dataset is divided into the following splits:
 ### Class Distribution
 
 #### Inflammation Status
-- Positive (inflammation present): XX% of particles
-- Negative (no inflammation): XX% of particles
+- Positive (inflammation present): 55.0% of slides
+- Negative (no inflammation): 36.1% of slides
+- Other: 8.9% of slides
 
 #### Tissue Types
-- Antrum: XX% of particles
-- Corpus: XX% of particles
-- Other: XX% of particles
+- Antrum: 46.8% of particles
+- Corpus: 44.8% of particles
+- Other: 8.4% of particles
 
 ### Sample Counts
-- Total patients: XXX
-- Total slides: XXX
-- Total particles: XXX
-- Total tiles: XXX
+- Total patients: 274
+- Total slides: 360
+- Total particles: 3,803
+- Total tiles: 59,612
 
 ## Annotation Methodology
 
@@ -106,12 +107,14 @@ Annotations were performed by pathologists following a multi-stage review proces
 
 ### Evaluation Metrics
 For scientific reproducibility, we recommend reporting:
-- Area Under ROC Curve (AUC)
+- Accuracy
+- Sensitivity
+- Specificity
+- Precision
 - F1 Score
-- Sensitivity & Specificity
-- Balanced Accuracy
+- Area Under ROC Curve (AUC)
 
-Report these metrics at both tile and slide/particle levels using validation-optimized thresholds.
+Report these metrics at tile and slide (inflammation) / particle (tissue) levels using validation-optimized thresholds.
 
 ## Limitations and Ethical Considerations
 

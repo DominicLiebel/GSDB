@@ -923,6 +923,21 @@ def create_scientific_plots():
         'figure.figsize': (8, 8),  # Default to square figure
         'figure.dpi': 300
     })
+    
+    # Define consistent colors for tissue types and inflammation status
+    tissue_colors = {
+        'corpus': '#1f77b4',      # Blue
+        'antrum': '#ff7f0e',      # Orange
+        'intermediate': '#2ca02c'  # Green
+    }
+    
+    inflammation_colors = {
+        'inflamed': '#d62728',     # Red
+        'noninflamed': '#2ca02c'   # Green
+    }
+    
+    # Define the order of dataset splits for consistent plotting
+    split_order = ['train', 'val', 'test', 'test_scanner2']
 
     # 1. Plot tissue type distribution across dataset splits
     he_slides = tiles_per_particle[tiles_per_particle['stain'] == 'HE'].copy()
@@ -932,9 +947,22 @@ def create_scientific_plots():
     # Count tissue types per split
     split_tissue_counts = he_slides.groupby(['split', 'tissue_type']).size().unstack(fill_value=0)
     
-    # Create plot
-    fig, ax = plt.subplots(figsize=(8, 6))
-    split_tissue_counts.plot(kind='bar', stacked=True, ax=ax, colormap='viridis')
+    # Reorder the splits
+    split_tissue_counts = split_tissue_counts.reindex(split_order)
+    
+    # Create plot with adjusted size for better proportions
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Use consistent colors for tissue types
+    color_list = [tissue_colors.get(tissue, '#777777') for tissue in split_tissue_counts.columns]
+    
+    split_tissue_counts.plot(
+        kind='bar', 
+        stacked=True, 
+        ax=ax, 
+        color=color_list
+    )
+    
     ax.set_xlabel('Dataset Split')
     ax.set_ylabel('Particle Count')
     ax.set_title('Tissue Type Distribution Across Dataset Splits')
@@ -943,10 +971,10 @@ def create_scientific_plots():
     # Ensure integer y-axis ticks
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     
-    # Add value labels on top of bars
+    # Add value labels on top of bars with better positioning
     for i, split in enumerate(split_tissue_counts.index):
         total = split_tissue_counts.loc[split].sum()
-        ax.text(i, total + 5, f'N={total}', ha='center', va='bottom')
+        ax.text(i, total + (total * 0.03), f'N={total}', ha='center', va='bottom', fontweight='bold')
     
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, 'tissue_type_distribution.png'), dpi=300)
@@ -956,18 +984,34 @@ def create_scientific_plots():
     # Count inflammation status per split
     split_inflam_counts = pd.DataFrame(columns=['inflamed', 'noninflamed'])
     
-    for split_name in he_slides['split'].unique():
-        split_df = he_slides[he_slides['split'] == split_name]
-        inflamed_slides = len(set(split_df[split_df['inflammation_status'] == 'inflamed']['slide_name']))
-        noninflamed_slides = len(set(split_df[split_df['inflammation_status'] == 'noninflamed']['slide_name']))
-        split_inflam_counts.loc[split_name] = [inflamed_slides, noninflamed_slides]
+    for split_name in split_order:
+        if split_name in he_slides['split'].unique():
+            split_df = he_slides[he_slides['split'] == split_name]
+            inflamed_slides = len(set(split_df[split_df['inflammation_status'] == 'inflamed']['slide_name']))
+            noninflamed_slides = len(set(split_df[split_df['inflammation_status'] == 'noninflamed']['slide_name']))
+            split_inflam_counts.loc[split_name] = [inflamed_slides, noninflamed_slides]
+        else:
+            split_inflam_counts.loc[split_name] = [0, 0]
     
     # Fill NaN with 0
     split_inflam_counts = split_inflam_counts.fillna(0)
     
-    # Create plot
-    fig, ax = plt.subplots(figsize=(8, 6))
-    split_inflam_counts.plot(kind='bar', ax=ax, color=['#ff7f0e', '#1f77b4'])
+    # Create plot with adjusted size and layout
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Calculate the total height for better annotation positioning
+    max_height = split_inflam_counts.sum(axis=1).max()
+    
+    # Plot with consistent colors
+    split_inflam_counts.plot(
+        kind='bar', 
+        ax=ax, 
+        color=[inflammation_colors['inflamed'], inflammation_colors['noninflamed']]
+    )
+    
+    # Set y-axis to go a bit higher for label space
+    ax.set_ylim(0, max_height * 1.15)
+    
     ax.set_xlabel('Dataset Split')
     ax.set_ylabel('Slide Count')
     ax.set_title('Inflammation Status Distribution Across Dataset Splits')
@@ -976,97 +1020,173 @@ def create_scientific_plots():
     # Ensure integer y-axis ticks
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
     
-    # Add value labels on top of bars
+    # Add value labels on top of bars with better positioning
     for i, split in enumerate(split_inflam_counts.index):
         total = split_inflam_counts.loc[split].sum()
-        ax.text(i, total + 1, f'N={int(total)}', ha='center', va='bottom')
+        if total > 0:  # Only add label if there are slides
+            ax.text(i, total + (max_height * 0.03), f'N={int(total)}', 
+                   ha='center', va='bottom', fontweight='bold')
     
     plt.tight_layout()
     plt.savefig(os.path.join(plots_dir, 'inflammation_status_distribution.png'), dpi=300)
     plt.close()
     
-    # 3. Plot tile count distribution by tissue type - Histogram
-    fig, ax = plt.subplots(figsize=(8, 6))
+    # 3. Replace the simple histogram with a more informative boxplot of tiles per particle
+    fig, ax = plt.subplots(figsize=(10, 6))
     
-    # Filter for different tissue types
-    corpus_tiles = tiles_per_particle[tiles_per_particle['tissue_type'] == 'corpus']['tiles_per_particle']
-    antrum_tiles = tiles_per_particle[tiles_per_particle['tissue_type'] == 'antrum']['tiles_per_particle']
-    intermediate_tiles = tiles_per_particle[tiles_per_particle['tissue_type'] == 'intermediate']['tiles_per_particle']
+    # Prepare data
+    tissue_dfs = []
+    for tissue, color in tissue_colors.items():
+        if tissue in he_slides['tissue_type'].unique():
+            tissue_df = he_slides[he_slides['tissue_type'] == tissue]
+            tissue_dfs.append((tissue, tissue_df, color))
     
-    # Plot histograms
-    bins = np.arange(0, max(tiles_per_particle['tiles_per_particle']) + 10, 10)
-    ax.hist([corpus_tiles, antrum_tiles, intermediate_tiles], 
-           bins=bins, alpha=0.7, label=['Corpus', 'Antrum', 'Intermediate'])
+    # Position indexes for boxplots
+    positions = []
+    labels = []
+    colors = []
+    data = []
     
-    ax.set_xlabel('Tiles per Particle')
-    ax.set_ylabel('Frequency')
-    ax.set_title('Distribution of Tiles per Particle by Tissue Type')
-    ax.legend(title='Tissue Type')
+    # Group by both split and tissue type for more detailed analysis
+    for i, split in enumerate(split_order):
+        for j, (tissue, tissue_df, color) in enumerate(tissue_dfs):
+            if split in tissue_df['split'].unique():
+                split_tissue_df = tissue_df[tissue_df['split'] == split]
+                if len(split_tissue_df) > 0:
+                    pos = i * (len(tissue_dfs) + 1) + j
+                    positions.append(pos)
+                    labels.append(f"{split}-{tissue}")
+                    colors.append(color)
+                    data.append(split_tissue_df['tiles_per_particle'].values)
     
-    # Ensure integer x-axis ticks
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    # Create boxplot
+    box = ax.boxplot(data, positions=positions, patch_artist=True, widths=0.6)
+    
+    # Set colors for each boxplot
+    for patch, color in zip(box['boxes'], colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+    
+    # Set x-axis labels with split and tissue type
+    split_positions = [i * (len(tissue_dfs) + 1) + (len(tissue_dfs) - 1) / 2 for i in range(len(split_order))]
+    ax.set_xticks(split_positions)
+    ax.set_xticklabels(split_order)
+    
+    # Add tissue type legend
+    from matplotlib.patches import Patch
+    legend_elements = [Patch(facecolor=color, edgecolor='black', label=tissue, alpha=0.7) 
+                     for tissue, color in tissue_colors.items() if tissue in he_slides['tissue_type'].unique()]
+    ax.legend(handles=legend_elements, title="Tissue Type")
+    
+    ax.set_xlabel('Dataset Split')
+    ax.set_ylabel('Tiles per Particle')
+    ax.set_title('Distribution of Tiles per Particle by Split and Tissue Type')
+    
+    # Add count annotations above each boxplot
+    for i, (pos, d) in enumerate(zip(positions, data)):
+        ax.text(pos, np.percentile(d, 75) * 1.1, f'n={len(d)}', 
+               ha='center', va='bottom', fontsize=8)
     
     plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, 'tiles_per_particle_histogram.png'), dpi=300)
+    plt.savefig(os.path.join(plots_dir, 'tiles_per_particle_distribution.png'), dpi=300)
     plt.close()
     
-    # 4. Plot stain type distribution - Pie chart
+    # 4. Replace pie chart with a more detailed stain distribution analysis
+    # Create a figure with multiple subplots
+    fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+    
+    # 4.1 Stain distribution by count (top-left)
     stain_counts = tiles_per_particle.groupby('stain').size()
+    stain_colors = sns.color_palette('Set2', n_colors=len(stain_counts))
     
-    # Use a square figure for pie chart
-    fig, ax = plt.subplots(figsize=(8, 8))
-    wedges, texts, autotexts = ax.pie(
-        stain_counts, 
-        labels=stain_counts.index,
-        autopct='%1.1f%%',
-        startangle=90,
-        colors=sns.color_palette('viridis', n_colors=len(stain_counts))
-    )
+    axs[0, 0].bar(stain_counts.index, stain_counts.values, color=stain_colors)
+    axs[0, 0].set_title('Stain Type Distribution by Count')
+    axs[0, 0].set_xlabel('Stain Type')
+    axs[0, 0].set_ylabel('Count')
     
-    # Enhance text properties
-    for autotext in autotexts:
-        autotext.set_color('white')
-        autotext.set_fontsize(9)
-        
-    ax.set_title('Distribution of Stain Types')
+    # Add count labels
+    for i, (stain, count) in enumerate(stain_counts.items()):
+        axs[0, 0].text(i, count + (count * 0.03), f'{count}', ha='center', va='bottom')
     
-    # Equal aspect ratio ensures circular pie
-    ax.axis('equal')
+    # 4.2 Stain distribution by split (top-right)
+    # Add split mapping to the complete dataset
+    all_slides = tiles_per_particle.copy()
+    all_slides['split'] = all_slides['slide_name'].map(split_mapping_he)
     
+    # Now group with the split column added
+    split_stain_counts = all_slides.groupby(['split', 'stain']).size().unstack(fill_value=0)
+    
+    # Handle missing splits
+    for split in split_order:
+        if split not in split_stain_counts.index:
+            split_stain_counts.loc[split] = 0
+            
+    # Reorder by our defined order
+    split_stain_counts = split_stain_counts.reindex(split_order)
+    
+    split_stain_counts.plot(kind='bar', ax=axs[0, 1], color=stain_colors)
+    axs[0, 1].set_title('Stain Type Distribution by Split')
+    axs[0, 1].set_xlabel('Dataset Split')
+    axs[0, 1].set_ylabel('Count')
+    axs[0, 1].legend(title='Stain Type')
+    
+    # 4.3 Stain distribution by tissue type (bottom-left)
+    tissue_stain_counts = tiles_per_particle.groupby(['tissue_type', 'stain']).size().unstack(fill_value=0)
+    
+    tissue_stain_counts.plot(kind='bar', ax=axs[1, 0], color=stain_colors)
+    axs[1, 0].set_title('Stain Type Distribution by Tissue Type')
+    axs[1, 0].set_xlabel('Tissue Type')
+    axs[1, 0].set_ylabel('Count')
+    axs[1, 0].legend(title='Stain Type')
+    
+    # 4.4 Stain distribution by inflammation status (bottom-right)
+    inflam_stain_counts = tiles_per_particle.groupby(['inflammation_status', 'stain']).size().unstack(fill_value=0)
+    
+    inflam_stain_counts.plot(kind='bar', ax=axs[1, 1], color=stain_colors)
+    axs[1, 1].set_title('Stain Type Distribution by Inflammation Status')
+    axs[1, 1].set_xlabel('Inflammation Status')
+    axs[1, 1].set_ylabel('Count')
+    axs[1, 1].legend(title='Stain Type')
+    
+    # Adjust layout
     plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, 'stain_type_distribution.png'), dpi=300)
+    plt.savefig(os.path.join(plots_dir, 'stain_type_detailed_distribution.png'), dpi=300)
     plt.close()
     
-    # 5. Create ROC-like plot or scatter plot comparison (just as an example)
-    # This is a dummy example - create a scientific square plot with x and y from 0 to 1
-    fig, ax = plt.subplots(figsize=(6, 6))  # Square figure
+    # 5. Scanner distribution analysis
+    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
     
-    # Plot diagonal line
-    ax.plot([0, 1], [0, 1], 'k--', alpha=0.7, label='Random')
+    # 5.1 Scanner count by split
+    # Use the all_slides dataframe that already has the split column
+    scanner_split_counts = all_slides.groupby(['split', 'scanner_id']).size().unstack(fill_value=0)
     
-    # Plot some sample curves
-    x = np.linspace(0, 1, 100)
-    ax.plot(x, x**0.5, label='Sample Curve 1')
-    ax.plot(x, 1 - (1-x)**2, label='Sample Curve 2')
+    # Handle missing splits
+    for split in split_order:
+        if split not in scanner_split_counts.index:
+            scanner_split_counts.loc[split] = 0
+            
+    # Reorder by our defined order
+    scanner_split_counts = scanner_split_counts.reindex(split_order)
     
-    # Set same limits for x and y axes
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
+    scanner_colors = sns.color_palette('Set1', n_colors=len(scanner_split_counts.columns))
     
-    # Equal aspect ratio for square plot
-    ax.set_aspect('equal')
+    scanner_split_counts.plot(kind='bar', ax=axs[0], color=scanner_colors)
+    axs[0].set_title('Scanner Distribution by Split')
+    axs[0].set_xlabel('Dataset Split')
+    axs[0].set_ylabel('Count')
+    axs[0].legend(title='Scanner ID')
     
-    # Labels and title
-    ax.set_xlabel('False Positive Rate')
-    ax.set_ylabel('True Positive Rate')
-    ax.set_title('Example of Scientific Square Plot')
+    # 5.2 Scanner count by tissue type
+    scanner_tissue_counts = tiles_per_particle.groupby(['tissue_type', 'scanner_id']).size().unstack(fill_value=0)
     
-    # Grid and legend
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='lower right')
+    scanner_tissue_counts.plot(kind='bar', ax=axs[1], color=scanner_colors)
+    axs[1].set_title('Scanner Distribution by Tissue Type')
+    axs[1].set_xlabel('Tissue Type')
+    axs[1].set_ylabel('Count')
+    axs[1].legend(title='Scanner ID')
     
     plt.tight_layout()
-    plt.savefig(os.path.join(plots_dir, 'example_scientific_square_plot.png'), dpi=300)
+    plt.savefig(os.path.join(plots_dir, 'scanner_distribution.png'), dpi=300)
     plt.close()
     
     print(f"All plots have been saved to: {plots_dir}")

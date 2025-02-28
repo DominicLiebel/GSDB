@@ -72,11 +72,20 @@ data/
     └── downsized_slides/    # Downsampled whole slides for visualization
 ```
 
-- The `raw/annotations/` directory contains the JSON annotation files for each slide.
-- The `raw/clusters/` directory contains the cluster files generated from the annotations.
-- The `raw/archive/` directory contains original expert annotations and reference materials.
-- The `raw/metrics/` directory contains dataset statistics, including the inflammation type information.
-- The `splits/seed_42/` directory contains the CSV files defining the dataset splits.
+- The `data/raw/annotations/` directory contains the JSON annotation files for each slide.
+- The `data/raw/clusters/` directory contains the cluster files generated from the annotations.
+- The `data/raw/archive/` directory contains original expert annotations and reference materials.
+- The `data/splits/seed_42/` directory contains the CSV files defining the dataset splits.
+- The `data/raw/metrics/` directory contains dataset metrics, including the inflammation type information.
 - The `processed/` directory is generated during pipeline execution and contains extracted tiles and downsized slides.
+
+```
+results/
+│
+├── metrics/
+│   └── inflammation_status.csv
+```
+
+- The `results/metrics/inflammation_status.csv` file contains the inflammation status information.
 
 Note: Whole slide images are not included in the repository due to size constraints, but will be provided separately in MRXS format.
