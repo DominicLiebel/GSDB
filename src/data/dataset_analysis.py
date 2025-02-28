@@ -5,6 +5,9 @@ from collections import Counter, defaultdict
 import numpy as np
 from pathlib import Path
 import sys
+import matplotlib.pyplot as plt
+import seaborn as sns
+from matplotlib.ticker import MaxNLocator
 
 # Add the project root to the path if not already
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -900,12 +903,180 @@ def calculate_tile_counts_detailed():
     
     return he_counts, all_counts, unassigned_slides
 
-# Main function to generate all tables
+# Function to create scientific plots
+def create_scientific_plots():
+    """Create scientific plots for dataset analysis with proper dimensions and formatting"""
+    # Create output directory for plots
+    plots_dir = os.path.join(BASE_DIR, "results/plots")
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # Set scientific plotting style
+    sns.set_style("whitegrid")
+    plt.rcParams.update({
+        'font.family': 'sans-serif',
+        'font.size': 10,
+        'axes.titlesize': 12,
+        'axes.labelsize': 10,
+        'xtick.labelsize': 9,
+        'ytick.labelsize': 9,
+        'legend.fontsize': 9,
+        'figure.figsize': (8, 8),  # Default to square figure
+        'figure.dpi': 300
+    })
+
+    # 1. Plot tissue type distribution across dataset splits
+    he_slides = tiles_per_particle[tiles_per_particle['stain'] == 'HE'].copy()
+    split_mapping_he, _ = create_split_mappings()
+    he_slides['split'] = he_slides['slide_name'].map(split_mapping_he)
+    
+    # Count tissue types per split
+    split_tissue_counts = he_slides.groupby(['split', 'tissue_type']).size().unstack(fill_value=0)
+    
+    # Create plot
+    fig, ax = plt.subplots(figsize=(8, 6))
+    split_tissue_counts.plot(kind='bar', stacked=True, ax=ax, colormap='viridis')
+    ax.set_xlabel('Dataset Split')
+    ax.set_ylabel('Particle Count')
+    ax.set_title('Tissue Type Distribution Across Dataset Splits')
+    ax.legend(title='Tissue Type')
+    
+    # Ensure integer y-axis ticks
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    
+    # Add value labels on top of bars
+    for i, split in enumerate(split_tissue_counts.index):
+        total = split_tissue_counts.loc[split].sum()
+        ax.text(i, total + 5, f'N={total}', ha='center', va='bottom')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, 'tissue_type_distribution.png'), dpi=300)
+    plt.close()
+    
+    # 2. Plot inflammation status distribution across dataset splits
+    # Count inflammation status per split
+    split_inflam_counts = pd.DataFrame(columns=['inflamed', 'noninflamed'])
+    
+    for split_name in he_slides['split'].unique():
+        split_df = he_slides[he_slides['split'] == split_name]
+        inflamed_slides = len(set(split_df[split_df['inflammation_status'] == 'inflamed']['slide_name']))
+        noninflamed_slides = len(set(split_df[split_df['inflammation_status'] == 'noninflamed']['slide_name']))
+        split_inflam_counts.loc[split_name] = [inflamed_slides, noninflamed_slides]
+    
+    # Fill NaN with 0
+    split_inflam_counts = split_inflam_counts.fillna(0)
+    
+    # Create plot
+    fig, ax = plt.subplots(figsize=(8, 6))
+    split_inflam_counts.plot(kind='bar', ax=ax, color=['#ff7f0e', '#1f77b4'])
+    ax.set_xlabel('Dataset Split')
+    ax.set_ylabel('Slide Count')
+    ax.set_title('Inflammation Status Distribution Across Dataset Splits')
+    ax.legend(title='Inflammation Status')
+    
+    # Ensure integer y-axis ticks
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    
+    # Add value labels on top of bars
+    for i, split in enumerate(split_inflam_counts.index):
+        total = split_inflam_counts.loc[split].sum()
+        ax.text(i, total + 1, f'N={int(total)}', ha='center', va='bottom')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, 'inflammation_status_distribution.png'), dpi=300)
+    plt.close()
+    
+    # 3. Plot tile count distribution by tissue type - Histogram
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    # Filter for different tissue types
+    corpus_tiles = tiles_per_particle[tiles_per_particle['tissue_type'] == 'corpus']['tiles_per_particle']
+    antrum_tiles = tiles_per_particle[tiles_per_particle['tissue_type'] == 'antrum']['tiles_per_particle']
+    intermediate_tiles = tiles_per_particle[tiles_per_particle['tissue_type'] == 'intermediate']['tiles_per_particle']
+    
+    # Plot histograms
+    bins = np.arange(0, max(tiles_per_particle['tiles_per_particle']) + 10, 10)
+    ax.hist([corpus_tiles, antrum_tiles, intermediate_tiles], 
+           bins=bins, alpha=0.7, label=['Corpus', 'Antrum', 'Intermediate'])
+    
+    ax.set_xlabel('Tiles per Particle')
+    ax.set_ylabel('Frequency')
+    ax.set_title('Distribution of Tiles per Particle by Tissue Type')
+    ax.legend(title='Tissue Type')
+    
+    # Ensure integer x-axis ticks
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, 'tiles_per_particle_histogram.png'), dpi=300)
+    plt.close()
+    
+    # 4. Plot stain type distribution - Pie chart
+    stain_counts = tiles_per_particle.groupby('stain').size()
+    
+    # Use a square figure for pie chart
+    fig, ax = plt.subplots(figsize=(8, 8))
+    wedges, texts, autotexts = ax.pie(
+        stain_counts, 
+        labels=stain_counts.index,
+        autopct='%1.1f%%',
+        startangle=90,
+        colors=sns.color_palette('viridis', n_colors=len(stain_counts))
+    )
+    
+    # Enhance text properties
+    for autotext in autotexts:
+        autotext.set_color('white')
+        autotext.set_fontsize(9)
+        
+    ax.set_title('Distribution of Stain Types')
+    
+    # Equal aspect ratio ensures circular pie
+    ax.axis('equal')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, 'stain_type_distribution.png'), dpi=300)
+    plt.close()
+    
+    # 5. Create ROC-like plot or scatter plot comparison (just as an example)
+    # This is a dummy example - create a scientific square plot with x and y from 0 to 1
+    fig, ax = plt.subplots(figsize=(6, 6))  # Square figure
+    
+    # Plot diagonal line
+    ax.plot([0, 1], [0, 1], 'k--', alpha=0.7, label='Random')
+    
+    # Plot some sample curves
+    x = np.linspace(0, 1, 100)
+    ax.plot(x, x**0.5, label='Sample Curve 1')
+    ax.plot(x, 1 - (1-x)**2, label='Sample Curve 2')
+    
+    # Set same limits for x and y axes
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    
+    # Equal aspect ratio for square plot
+    ax.set_aspect('equal')
+    
+    # Labels and title
+    ax.set_xlabel('False Positive Rate')
+    ax.set_ylabel('True Positive Rate')
+    ax.set_title('Example of Scientific Square Plot')
+    
+    # Grid and legend
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='lower right')
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, 'example_scientific_square_plot.png'), dpi=300)
+    plt.close()
+    
+    print(f"All plots have been saved to: {plots_dir}")
+
+# Main function to generate all tables and plots
 def main():
-    """Generate all LaTeX tables and save to files"""
+    """Generate all LaTeX tables and scientific plots and save to files"""
     # Create output directory with base path
-    output_dir = os.path.join(BASE_DIR, "results/tables")
-    os.makedirs(output_dir, exist_ok=True)
+    tables_dir = os.path.join(BASE_DIR, "results/tables")
+    os.makedirs(tables_dir, exist_ok=True)
     
     # Generate all tables
     tables = {
@@ -921,15 +1092,18 @@ def main():
     
     # Save tables to files
     for name, latex in tables.items():
-        with open(os.path.join(output_dir, f"{name}.tex"), "w") as f:
+        with open(os.path.join(tables_dir, f"{name}.tex"), "w") as f:
             f.write(latex)
         print(f"Generated {name}.tex")
     
     # Calculate and print tile counts
     calculate_tile_counts_detailed()
     
-    print("\nAll tables have been generated successfully.")
-    print(f"Tables saved to: {output_dir}")
+    # Create scientific plots
+    create_scientific_plots()
+    
+    print("\nAll tables and plots have been generated successfully.")
+    print(f"Tables saved to: {tables_dir}")
 
 if __name__ == "__main__":
     main()
