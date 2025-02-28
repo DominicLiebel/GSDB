@@ -1,17 +1,17 @@
 name: gsdb
 channels:
+  - conda-forge
   - pytorch
   - nvidia
-  - conda-forge
   - defaults
-  - https://repo.anaconda.com/pkgs/main
-  - https://repo.anaconda.com/pkgs/r
 dependencies:
   - pip=25.0.1
   - python=3.13.2
   - pytorch=2.6.0
   - torchvision=0.21.0
   - pytorch-cuda=12.4
+  - conda-forge::huggingface_hub
+  - conda-forge::timm
   - pillow=11.1.0
   - libjpeg-turbo
   - libpng
@@ -27,9 +27,7 @@ dependencies:
   - seaborn
   - pip:
       - wandb
-      - timm
       - transformers
-      - huggingface_hub
       - tensorboard
       - scipy
       - einops

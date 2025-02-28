@@ -24,7 +24,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from dataset import HistologyDataset
-from evaluate import load_model, get_transforms
+from src.models.model_utils import load_model, get_transforms
 
 def calculate_metrics(y_true, y_pred, y_scores=None, prefix=''):
     """Calculate binary classification metrics.
@@ -325,13 +325,14 @@ def calculate_hierarchical_metrics(
         )
         metrics.update(particle_metrics)
     
-    # Add metadata
+    # Add metadata and preserve the original dataframe
     metrics.update({
         'split': split,
         'model_name': model_name,
         'threshold': threshold,
         'total_samples': len(df),
-        'task': 'inflammation' if is_inflammation_task else 'tissue'
+        'task': 'inflammation' if is_inflammation_task else 'tissue',
+        'predictions_df': df  # Store the original predictions DataFrame
     })
     
     return metrics
@@ -739,10 +740,36 @@ def visualize_threshold_optimization(y_true: List, y_prob: List, optimal_thresho
     plt.savefig(output_dir / f'{level}_threshold_optimization.png')
     plt.close()
 
-def save_metrics(metrics: Dict, output_dir: Path):
-    """Save metrics to JSON file and create human-readable summary."""
-    # Validate metrics consistency before saving
-    metrics = validate_metrics_consistency(metrics)
+def save_metrics(metrics: Dict, output_dir: Path) -> None:
+    """Save evaluation metrics to JSON file and create human-readable summary.
+    
+    Args:
+        metrics: Dictionary of metrics
+        output_dir: Directory to save metrics
+    """
+    # Create a copy of metrics to avoid modifying the original
+    metrics_copy = {}
+    
+    # Convert DataFrames to dict or list to make them JSON serializable
+    for key, value in metrics.items():
+        if hasattr(value, 'to_dict'):  # Check if it's a DataFrame or Series
+            if hasattr(value, 'to_records'):  # DataFrame
+                metrics_copy[key] = value.to_dict(orient='records')
+            else:  # Series
+                metrics_copy[key] = value.to_dict()
+        elif isinstance(value, dict):
+            # Recursively process nested dictionaries
+            metrics_copy[key] = {}
+            for sub_key, sub_value in value.items():
+                if hasattr(sub_value, 'to_dict'):  # Check for DataFrame or Series
+                    if hasattr(sub_value, 'to_records'):  # DataFrame
+                        metrics_copy[key][sub_key] = sub_value.to_dict(orient='records')
+                    else:  # Series
+                        metrics_copy[key][sub_key] = sub_value.to_dict()
+                else:
+                    metrics_copy[key][sub_key] = sub_value
+        else:
+            metrics_copy[key] = value
     
     # Create output directory if it doesn't exist
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -752,7 +779,7 @@ def save_metrics(metrics: Dict, output_dir: Path):
     output_file = output_dir / f"metrics_{timestamp}.json"
     
     with open(output_file, 'w') as f:
-        json.dump(metrics, f, indent=2)
+        json.dump(metrics_copy, f, indent=2)
     
     logging.info(f"Metrics saved to: {output_file}")
     

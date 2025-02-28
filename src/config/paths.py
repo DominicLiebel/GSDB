@@ -37,7 +37,7 @@ def get_base_dir() -> Path:
     project_root = current_dir.parent.parent  # Move up to project root
     
     # Fallback to a reasonable default
-    default_dir = project_root / "data"
+    default_dir = project_root
     if default_dir.exists():
         return default_dir
     else:
@@ -60,7 +60,7 @@ def get_project_paths(base_dir: Optional[Path] = None) -> Dict[str, Path]:
     
     paths = {
         "BASE_DIR": base_dir,
-        "DATA_DIR": base_dir,
+        "DATA_DIR": base_dir / "data",
         "RAW_DIR": base_dir / "data/raw",
         "PROCESSED_DIR": base_dir / "data/processed",
         "SPLITS_DIR": base_dir / "data/splits",

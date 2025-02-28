@@ -9,6 +9,7 @@ results/logs
 results/models
 results/tables
 results/tuning
-x_AUXILIARIES
 src/models/__pycache__
 src/config/__pycache__
+src/models/architectures/__pycache__
+x_AUXILIARIES

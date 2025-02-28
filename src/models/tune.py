@@ -65,7 +65,8 @@ import timm
 
 # Local imports
 from dataset import HistologyDataset
-import metrics_utils
+import src.models.metrics_utils as metrics_utils
+from src.models.model_utils import load_model, get_transforms
 import training_utils
 from train import HistologyClassifier, get_transforms
 
