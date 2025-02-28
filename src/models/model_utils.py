@@ -46,6 +46,10 @@ def load_model(model_path: Path, device: torch.device, architecture: str = "giga
             model = timm.create_model("swin_v2_b", pretrained=True, num_classes=1)
         elif architecture == "convnext_large":
             model = timm.create_model("convnext_large", pretrained=True, num_classes=1)
+        elif architecture == "densenet121":
+            model = timm.create_model("densenet121", pretrained=True, num_classes=1)
+        elif architecture == "densenet169":
+            model = timm.create_model("densenet169", pretrained=True, num_classes=1)
         else:
             raise ValueError(f"Unsupported architecture: {architecture}")
         
