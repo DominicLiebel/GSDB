@@ -152,8 +152,8 @@ class DataSplitter:
         logging.info(f"Scanner 2 slides: {len(df_scanner2)}")
         logging.info(f"Scanner 2 patients: {df_scanner2['patient_id'].nunique()}")
         
-        # Create splits with scikit-learn for more robust splitting
-        unique_patients = df_scanner1['patient_id'].unique()
+        # Create splits on sortd dataframe with scikit-learn for robust splitting
+        unique_patients = np.sort(df_scanner1['patient_id'].unique())
         
         # Split into train and temp (validation + test combined)
         train_patients, temp_patients = train_test_split(

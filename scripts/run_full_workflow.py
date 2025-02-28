@@ -95,15 +95,16 @@ def get_timestamp():
 def preprocess_data(paths):
     """Run the data preprocessing steps."""
     logging.info("Starting data preprocessing...")
+
     
-    # Step 1: Process dataset metadata
-    logging.info("Step 2: Processing dataset metadata")
-    cmd = f"python {project_root}/src/data/process_dataset.py --base-dir {paths['BASE_DIR']}"
-    run_command(cmd)
-    
-    # Step 2: Extract tiles from WSIs
+    # Step 1: Extract tiles from WSIs
     logging.info("Step 3: Extracting tiles from whole slide images")
     cmd = f"python {project_root}/src/data/extract_tiles.py --base-dir {paths['BASE_DIR']} --tile-size 256 --downsample 10 --overlap 64"
+    run_command(cmd)
+
+    # Step 2: Process dataset metadata
+    logging.info("Step 2: Processing dataset metadata")
+    cmd = f"python {project_root}/src/data/process_dataset.py --base-dir {paths['BASE_DIR']}"
     run_command(cmd)
     
     # Step 3: Create dataset splits

@@ -104,17 +104,6 @@ def setup_conda_environment():
         logging.error(f"Failed to create conda environment: {e}")
         return False
 
-def install_package():
-    """Install the project as a package in development mode."""
-    logging.info("Installing GSDB package in development mode...")
-    
-    try:
-        run_command("pip install -e .", "Installing package")
-        logging.info("Package installed successfully")
-        return True
-    except Exception as e:
-        logging.error(f"Failed to install package: {e}")
-        return False
 
 def download_sample_data(data_path):
     """Download sample data for testing the installation."""
@@ -251,11 +240,6 @@ def main():
             return 1
     else:
         logging.info("Skipping conda environment setup (--skip_conda)")
-    
-    # Install package
-    if not install_package():
-        logging.error("Failed to install package")
-        return 1
     
     # Download sample data (if requested)
     if args.download_samples:

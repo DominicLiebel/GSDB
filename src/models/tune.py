@@ -371,6 +371,8 @@ def objective(trial: Trial, args: argparse.Namespace, model_tracker: ModelTracke
         min_epochs = 5  # Minimum epochs before pruning
         
         for epoch in range(args.epochs):
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             # Training phase
             model.train()
             train_loss = 0.0
@@ -384,6 +386,7 @@ def objective(trial: Trial, args: argparse.Namespace, model_tracker: ModelTracke
                 loss = criterion(outputs, labels)
                 
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
                 
                 train_loss += loss.item()
@@ -442,7 +445,7 @@ def objective(trial: Trial, args: argparse.Namespace, model_tracker: ModelTracke
                     
                 if patience_counter >= patience:
                     break
-            
+        logging.info(f"Trial {trial.number} completed with best_val_loss: {best_val_loss}")
         return best_val_loss
         
     except Exception as e:
