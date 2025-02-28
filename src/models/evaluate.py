@@ -753,7 +753,6 @@ def main():
         # If no valid thresholds were loaded, calculate them on validation data
         if validation_thresholds is None:
             logging.info("No pre-computed thresholds found. Calculating using validation data only...")
-            logging.info("NOTE: For scientific publishing, consider pre-computing & saving thresholds")
             
             validation_thresholds = metrics_utils.calculate_validation_thresholds(
                 model_path=args.model_path,

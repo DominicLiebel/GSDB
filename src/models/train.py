@@ -262,14 +262,29 @@ def setup_logging(output_dir: Path):
     Args:
         output_dir (Path): Directory for saving log file
     """
+    # Ensure directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create log file with timestamp for uniqueness
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = output_dir / f'training_{timestamp}.log'
+    
+    # Remove any existing handlers to avoid duplicate logs
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # Configure logging with new handlers
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler(output_dir / 'training.log'),
+            logging.FileHandler(log_file),
             logging.StreamHandler()
         ]
     )
+    
+    logging.info(f"Logging configured. Log file: {log_file}")
 
 def configure_device(config: dict = None) -> torch.device:
     """Configure device for training/evaluation.
@@ -637,7 +652,6 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = paths["MODELS_DIR"] / f"{args.task}_{timestamp}"
     model_dir.mkdir(parents=True, exist_ok=True)
-    setup_logging(model_dir)
     
     # Set random seeds for reproducibility
     training_utils.set_all_seeds(args.seed)

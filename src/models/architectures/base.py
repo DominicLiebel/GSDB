@@ -77,8 +77,9 @@ class HistologyClassifier(nn.Module):
             self.backbone = convnext_large(weights=ConvNeXt_Large_Weights.DEFAULT)
             # Modify classifier head
             self.backbone.classifier = nn.Sequential(
-                nn.LayerNorm(1536),
-                nn.Flatten(1),
+                nn.Flatten(1),  # First flatten the spatial dimensions
+                nn.LayerNorm(1536),  # Then apply normalization
+                nn.Dropout(p=self.dropout_rate),  # Add dropout for consistency
                 nn.Linear(1536, self.num_classes)
             )
             
@@ -92,6 +93,23 @@ class HistologyClassifier(nn.Module):
                 nn.Dropout(p=self.dropout_rate),
                 nn.Linear(in_features, self.num_classes)
             )
+
+        elif model_name == 'swin_v2_b':
+            from torchvision.models import swin_v2_b, Swin_V2_B_Weights
+            self.backbone = swin_v2_b(weights=Swin_V2_B_Weights.DEFAULT)
+            
+            # Get feature dimension
+            in_features = self.backbone.head.in_features
+            
+            # Simplified head without LayerNorm
+            # Swin V2 already has normalization before the head
+            self.backbone.head = nn.Sequential(
+                nn.Dropout(p=self.dropout_rate),
+                nn.Linear(in_features, self.num_classes)
+            )
+            
+            # Log creation for debugging
+            logging.debug(f"Created Swin V2 B with in_features={in_features}")
             
         else:
             raise ValueError(f"Unsupported model: {model_name}. Use 'resnet18', 'densenet121', 'densenet169', 'swin_v2_b', or 'convnext_large'. For GigaPath, use GigaPathClassifier.")

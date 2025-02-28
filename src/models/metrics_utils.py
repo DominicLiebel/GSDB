@@ -609,12 +609,6 @@ def optimize_aggregation_strategy(df: pd.DataFrame, task: str = 'inflammation',
         logging.info(f"  F1: {metrics['f1']:.4f}, Sens: {metrics['sensitivity']:.4f}, " +
                    f"Spec: {metrics['specificity']:.4f}, Acc: {metrics['accuracy']:.4f}")
     
-    # Log information about the new filtering strategies
-    logging.info("\nNew filtering strategy explanation:")
-    logging.info("- filter_90_mean: Removes bottom 90% of tiles with lowest activation, computes mean of top 10%")
-    logging.info("- filter_80_mean: Removes bottom 80% of tiles with lowest activation, computes mean of top 20%")
-    logging.info("- filter_70_mean: Removes bottom 70% of tiles with lowest activation, computes mean of top 30%")
-    
     # Create visualization if output directory provided
     if output_dir:
         output_dir = Path(output_dir)
