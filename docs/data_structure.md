@@ -1,58 +1,82 @@
 # Data Structure
 
-This dataset is split into train, validation, test, and test_new_scanner sets using a fixed random seed of 42. The inflammation type for each slide is provided in the `inflammation_type.csv` file.
+This dataset is split into train, validation, test, and test_scanner2 sets using a fixed random seed of 42. The inflammation status for each slide is provided in the `inflammation_type.csv` file.
 
 ## Dataset Splits
 
-The dataset is divided into the following splits:
+The dataset is divided into the following splits, with separate files for HE stain only and all stains:
 
-1. **Train Set**: `train_set_seed42.csv`
-   - Contains the majority of the data used for training the models.
+1. **Train Set**: 
+   - `train_HE.csv`: HE-stained training samples
+   - `train_all_stains.csv`: Training samples for all stain types (HE, PAS, MG)
 
-2. **Validation Set**: `val_set_seed42.csv`
-   - Used for evaluating the model's performance during training and for hyperparameter tuning.
+2. **Validation Set**: 
+   - `val_HE.csv`: HE-stained validation samples
+   - `val_all_stains.csv`: Validation samples for all stain types
 
-3. **Test Set**: `test_set_seed42.csv`
-   - Used for evaluating the final performance of the trained models.
+3. **Test Set**: 
+   - `test_HE.csv`: HE-stained test samples
+   - `test_all_stains.csv`: Test samples for all stain types
 
-4. **Test New Scanner Set**: `test_new_scanner_set_seed42.csv`
-   - Contains slides from a new scanner, used to assess the model's generalization ability to data from a different source.
+4. **Test Scanner 2 Set**: 
+   - `test_scanner2_HE.csv`: HE-stained samples from scanner 2
+   - `test_scanner2_all_stains.csv`: All stain type samples from scanner 2
 
-Each split file contains a list of slide IDs corresponding to that particular split.
+Each split file contains a list of slides corresponding to that particular split.
 
-## Inflammation Type
+## Inflammation Status
 
-The `inflammation_type.csv` file provides the inflammation type for each slide in the dataset. It has the following columns:
+The `inflammation_status.csv` file provides the inflammation type for each slide in the dataset. It has the following columns:
 
-- `NEW_ID`: The unique identifier for each slide.
-- `INFLAMMATION`: The inflammation type associated with each slide, which can be either "inflamed" or "noninflamed".
+- `slide_name`: The unique identifier for each slide.
+- `inflammation_status`: The inflammation type associated with each slide, which can be either "inflamed" or "noninflamed".
 
 ## Data Directory Structure
 
-The data directory structure is as follows:
+The actual data directory structure is as follows:
 
 ```
 data/
 │
 ├── raw/
-│   └── slides/
-│       ├── slide1.mrxs
-│       ├── slide2.mrxs
+│   ├── annotations/         # JSON annotation files
+│   │   ├── 1_1_1_HE_annotations.json
+│   │   └── ...
+│   ├── clusters/            # Cluster files for tissue regions
+│   │   ├── 1_1_1_HE_clusters.json
+│   │   └── ...
+│   ├── archive/             # Archives of expert annotations
+│   │   └── expert_annotations/
+│   │       ├── new_scanner_annotations.docx
+│   │       ├── old_scanner_annotations.docx
+│   │       └── png_annotations/
+│   │           └── ...
+│   └── metrics/             # Dataset metrics
+│       ├── expert_annotations_summary.csv
+│       ├── inflammation_type.csv
 │       └── ...
 │
 ├── splits/
-│   ├── train_set_seed42.csv
-│   ├── val_set_seed42.csv
-│   ├── test_set_seed42.csv
-│   └── test_new_scanner_set_seed42.csv
+│   └── seed_42/             # Data splits with random seed 42
+│       ├── train_HE.csv
+│       ├── train_all_stains.csv
+│       ├── val_HE.csv
+│       ├── val_all_stains.csv
+│       ├── test_HE.csv
+│       ├── test_all_stains.csv
+│       ├── test_scanner2_HE.csv
+│       └── test_scanner2_all_stains.csv
 │
-└── processed/
-│   └── statistics/
-│       ├── inflammation_type.csv
+└── processed/               # Processed data (generated during pipeline execution)
+    ├── tiles/               # Extracted tissue tiles (*.png)
+    └── downsized_slides/    # Downsampled whole slides for visualization
 ```
 
-- The `raw/slides/` directory contains the original whole slide images in the MRXS format.
-- The `splits/` directory contains the CSV files defining the train, validation, test, and test_new_scanner splits.
-- The `inflammation_type.csv` contains the inflammation type for each slide in the dataset. Slides with inflammation types other than 'inflamed' and 'noninflamed' are filtered out.
+- The `raw/annotations/` directory contains the JSON annotation files for each slide.
+- The `raw/clusters/` directory contains the cluster files generated from the annotations.
+- The `raw/archive/` directory contains original expert annotations and reference materials.
+- The `raw/metrics/` directory contains dataset statistics, including the inflammation type information.
+- The `splits/seed_42/` directory contains the CSV files defining the dataset splits.
+- The `processed/` directory is generated during pipeline execution and contains extracted tiles and downsized slides.
 
-Note: The specific paths mentioned in the provided files (`/mnt/data/dliebel/2024_dliebel/data/...`) should be adjusted according to your local directory structure.
+Note: Whole slide images are not included in the repository due to size constraints, but will be provided separately in MRXS format.

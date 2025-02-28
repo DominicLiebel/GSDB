@@ -50,7 +50,7 @@ Tiles follow this naming convention:
 ```
 
 Where:
-- `scanner_id`: Scanner identifier (1 or 271/272/273)
+- `scanner_id`: Scanner identifier (1 or 2)
 - `patient_id`: Anonymized patient identifier
 - `stain`: Staining method (HE, PAS, MG)
 - `particle_uuid`: Unique identifier for each tissue particle

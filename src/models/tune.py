@@ -70,12 +70,14 @@ from src.models.model_utils import load_model, get_transforms
 import training_utils
 from train import get_transforms
 
-# Base directory configuration
-BASE_DIR = Path('/mnt/data/dliebel/2024_dliebel')
+# Import project paths from config module
+from src.config.paths import get_project_paths
 
-# Define common subdirectories
+# Get project paths
+paths = get_project_paths()
+BASE_DIR = paths["BASE_DIR"]
 CONFIG_DIR = BASE_DIR / 'configs'
-RESULTS_DIR = BASE_DIR / 'results'
+RESULTS_DIR = paths["RESULTS_DIR"]
 LOG_DIR = RESULTS_DIR / 'logs'
 MODEL_DIR = RESULTS_DIR / 'models'
 TUNING_DIR = RESULTS_DIR / 'tuning'

@@ -257,8 +257,7 @@ If you use this codebase in your research, please cite our paper:
 @article{liebel2025gastric,
   title={Developing a comprehensive dataset and baseline model for classification and generalizability testing of gastric whole slide images in computational pathology},
   author={Liebel, Dominic},
-  pages={[Pages]},
-  year={2025},
+  year={2025}
 }
 ```
 
