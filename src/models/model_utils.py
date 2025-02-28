@@ -41,11 +41,11 @@ def load_model(model_path: Path, device: torch.device, architecture: str = "giga
         if architecture == "gigapath":
             model = GigaPathClassifier(num_classes=1)
         elif architecture == "resnet18":
-            model = timm.create_model("resnet18", pretrained=False, num_classes=1)
+            model = timm.create_model("resnet18", pretrained=True, num_classes=1)
         elif architecture == "swin_v2_b":
-            model = timm.create_model("swin_v2_b", pretrained=False, num_classes=1)
+            model = timm.create_model("swin_v2_b", pretrained=True, num_classes=1)
         elif architecture == "convnext_large":
-            model = timm.create_model("convnext_large", pretrained=False, num_classes=1)
+            model = timm.create_model("convnext_large", pretrained=True, num_classes=1)
         else:
             raise ValueError(f"Unsupported architecture: {architecture}")
         

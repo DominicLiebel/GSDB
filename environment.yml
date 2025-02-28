@@ -1,9 +1,9 @@
 name: gsdb
 channels:
+  - nvidia
   - pytorch
+  - conda-forge
   - defaults
-  - https://repo.anaconda.com/pkgs/main
-  - https://repo.anaconda.com/pkgs/r
 dependencies:
   - python
   - pip
@@ -12,9 +12,23 @@ dependencies:
   - pandas
   - seaborn
   - huggingface_hub
-  - conda-forge::timm
+  - timm
+  - pytorch
+  - torchvision
+  - torchaudio
+  - nvidia::pytorch-cuda=11.8
+  - scikit-learn
+  - shapely
+  - openslide
+  - optuna
+  - pyyaml
+  - plotly
+  - scikit-image
+  - tqdm
   - pip:
-      - scikit-learn
-      - torch
-      - shapely
       - openslide-bin
+      - pycocotools
+      - torchmetrics
+      - albumentations
+      - tk
+      - opencv-python

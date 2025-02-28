@@ -68,7 +68,7 @@ from dataset import HistologyDataset
 import src.models.metrics_utils as metrics_utils
 from src.models.model_utils import load_model, get_transforms
 import training_utils
-from train import HistologyClassifier, get_transforms
+from train import get_transforms
 
 # Base directory configuration
 BASE_DIR = Path('/mnt/data/dliebel/2024_dliebel')
@@ -642,7 +642,8 @@ def train_final_model(trial: optuna.trial.FrozenTrial, args: argparse.Namespace,
             optimizer=optimizer,
             criterion=criterion,
             scaler=scaler,
-            device=device
+            device=device,
+            deterministic=True
         )
         
         # Validation phase
