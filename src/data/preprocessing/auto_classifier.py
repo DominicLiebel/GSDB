@@ -32,13 +32,8 @@ except ImportError:
 
 
 class AutoClassifier:
-    def __init__(self, annotation_options=None, paths=None):
-        """Initialize classifier with model paths and configuration.
-        
-        Args:
-            annotation_options: Dictionary of annotation options for coloring
-            paths: Dictionary of project paths, will be auto-detected if not provided
-        """
+    def __init__(self, annotation_options=None, paths=None, custom_tissue_model=None, custom_inflammation_model=None):
+        """Initialize classifier with model paths and configuration."""
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         
@@ -56,12 +51,20 @@ class AutoClassifier:
         else:
             self.paths = paths
         
-        # Model paths using the models directory
-        self.TISSUE_MODEL_PATH = self._find_model("tissue")
-        self.INFLAMMATION_MODEL_PATH = self._find_model("inflammation")
-        
-        self.logger.info(f"Using tissue model: {self.TISSUE_MODEL_PATH}")
-        self.logger.info(f"Using inflammation model: {self.INFLAMMATION_MODEL_PATH}")
+        # Use custom paths if provided, otherwise find automatically
+        if custom_tissue_model and Path(custom_tissue_model).exists():
+            self.TISSUE_MODEL_PATH = Path(custom_tissue_model)
+            self.logger.info(f"Using custom tissue model: {self.TISSUE_MODEL_PATH}")
+        else:
+            self.TISSUE_MODEL_PATH = self._find_model("tissue")
+            self.logger.info(f"Using auto-detected tissue model: {self.TISSUE_MODEL_PATH}")
+            
+        if custom_inflammation_model and Path(custom_inflammation_model).exists():
+            self.INFLAMMATION_MODEL_PATH = Path(custom_inflammation_model)
+            self.logger.info(f"Using custom inflammation model: {self.INFLAMMATION_MODEL_PATH}")
+        else:
+            self.INFLAMMATION_MODEL_PATH = self._find_model("inflammation")
+            self.logger.info(f"Using auto-detected inflammation model: {self.INFLAMMATION_MODEL_PATH}")
         
         # Tile parameters matching training
         self.TILE_SIZE = 256
@@ -318,7 +321,7 @@ class AutoClassifier:
                 # Update properties with classifications
                 updated_annotation["properties"]["classification"].update({
                     "tissue_type": tissue_type,
-                    "inflammation_type": inflammation_type
+                    "inflammation_status": inflammation_type  # Changed from inflammation_type for consistency
                 })
                 
                 # Add color if available
@@ -329,7 +332,7 @@ class AutoClassifier:
                 if tissue_probs and inflammation_probs:
                     updated_annotation["properties"]["classification"].update({
                         "tissue_probabilities": tissue_probs,
-                        "inflammation_probabilities": inflammation_probs
+                        "inflammation_status_probabilities": inflammation_probs  # Changed for consistency
                     })
                 
                 updated_annotations.append(updated_annotation)

@@ -16,20 +16,23 @@ import sys
 import cv2
 from skimage import measure
 import threading
-import traceback
 from queue import Queue
-
+import traceback
 
 class AnnotationType(Enum):
     TISSUE = "tissue"
     INFLAMMATION = "inflammation"
 
 class WSIListFrame(ttk.Frame):
-    def __init__(self, parent, callback, downsample=16):
+    def __init__(self, parent, callback, downsample=16, annotation_folder=None):
         super().__init__(parent)
         self.callback = callback
         self.DOWNSAMPLE = downsample
         self.parent = parent
+        self.annotation_folder = annotation_folder
+
+        # Create necessary subdirectories
+        (self.annotation_folder / "clusters").mkdir(parents=True, exist_ok=True)
         
         # Add thumbnail cache
         self.thumbnail_cache = {}
@@ -293,7 +296,7 @@ class WSIListFrame(ttk.Frame):
     def get_annotation_count(self, wsi_name: str) -> int:
         """Get number of annotations for a WSI"""
         try:
-            annotation_path = Path(f"annotations/{wsi_name}_annotations.json")
+            annotation_path = self.annotation_folder / f"{wsi_name}_annotations.json"
             if annotation_path.exists():
                 with open(annotation_path, 'r') as f:
                     annotations = json.load(f)
@@ -318,7 +321,7 @@ class WSIListFrame(ttk.Frame):
     def get_cluster_count(self, wsi_name: str) -> int:
         """Get number of clusters for a WSI"""
         try:
-            cluster_path = Path(f"clusters/{wsi_name}_clusters.json")
+            cluster_path = self.annotation_folder / "clusters" / f"{wsi_name}_clusters.json"
             if cluster_path.exists():
                 with open(cluster_path, 'r') as f:
                     clusters = json.load(f)
@@ -345,9 +348,22 @@ class AnnotationTool:
         screen_height = self.root.winfo_screenheight()
         self.root.geometry(f"{screen_width}x{screen_height}")
         
+        # Select annotation folder at startup
+        self.select_annotation_folder()
+        
+        # Load configuration if it exists - moved after select_annotation_folder
+        self.load_config()
+        
+        # Remove model selection at startup - will be done when classifying
+        # self.select_model_paths()  # <-- Remove this line
+        
+        # Initialize model paths to None
+        self.tissue_model_path = None
+        self.inflammation_model_path = None
+        
         # Add memory management
         self.image_cache = {}
-        self.max_cache_size = 3  # Number of WSIs to keep in memory
+        self.max_cache_size = 10  # Number of WSIs to keep in memory
         
         # Add auto-backup configuration
         self.backup_interval = 300000  # 5 minutes in milliseconds
@@ -365,13 +381,16 @@ class AnnotationTool:
                 'intermediate': [50, 255, 50],  # Bright green
                 'other': [189, 0, 255]         # Bright purple
             },
-            'inflammation': {
+            'inflammation_status': {  # Changed from 'inflammation' for consistency
                 'inflamed': None,      # No separate colors for inflammation
                 'noninflamed': None,
                 'unclear': None,
                 'other': None
             }
         }
+
+        # Default inflammation status for quick annotations
+        self.default_inflammation_status = 'other'
         
         # State variables
         self.current_image = None
@@ -402,12 +421,233 @@ class AnnotationTool:
         # Initialize auto-backup
         self.setup_auto_backup()
 
+    def load_config(self):
+        """Load configuration from file"""
+        if not hasattr(self, 'annotation_folder'):
+            logging.error("Annotation folder not set before loading config")
+            self.config = {}
+            return
+        
+        self.config_file = self.annotation_folder / "annotation_config.json"
+        self.config = {}
+        
+        if self.config_file.exists():
+            try:
+                with open(self.config_file, 'r') as f:
+                    self.config = json.load(f)
+            except Exception as e:
+                logging.error(f"Error loading config: {e}")
+                self.config = {}
+        
+    def save_config(self):
+        """Save current configuration to file"""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(self.config, f, indent=2)
+        except Exception as e:
+            logging.error(f"Error saving config: {e}")
+
+    def select_model_paths(self):
+        """Allow user to select paths for tissue and inflammation models"""
+        # Create dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Select Model Paths")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center dialog
+        window_width = 600
+        window_height = 250
+        position_x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (window_width // 2)
+        position_y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (window_height // 2)
+        dialog.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
+        
+        # Get last used paths from config
+        tissue_path = self.config.get('tissue_model_path', '')
+        inflammation_path = self.config.get('inflammation_model_path', '')
+        
+        # Tissue model path
+        tissue_frame = ttk.LabelFrame(dialog, text="Tissue Model Path")
+        tissue_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        tissue_var = tk.StringVar(value=tissue_path)
+        tissue_entry = ttk.Entry(tissue_frame, textvariable=tissue_var, width=60)
+        tissue_entry.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+        
+        def browse_tissue():
+            path = filedialog.askopenfilename(
+                title="Select Tissue Model",
+                filetypes=[("PyTorch Models", "*.pt *.pth"), ("All Files", "*.*")],
+                initialdir=str(Path(tissue_var.get()).parent) if tissue_var.get() else "/"
+            )
+            if path:
+                tissue_var.set(path)
+        
+        ttk.Button(tissue_frame, text="Browse...", command=browse_tissue).pack(side=tk.RIGHT, padx=5, pady=5)
+        
+        # Inflammation model path
+        inflam_frame = ttk.LabelFrame(dialog, text="Inflammation Model Path")
+        inflam_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        inflam_var = tk.StringVar(value=inflammation_path)
+        inflam_entry = ttk.Entry(inflam_frame, textvariable=inflam_var, width=60)
+        inflam_entry.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+        
+        def browse_inflam():
+            path = filedialog.askopenfilename(
+                title="Select Inflammation Model",
+                filetypes=[("PyTorch Models", "*.pt *.pth"), ("All Files", "*.*")],
+                initialdir=str(Path(inflam_var.get()).parent) if inflam_var.get() else "/"
+            )
+            if path:
+                inflam_var.set(path)
+        
+        ttk.Button(inflam_frame, text="Browse...", command=browse_inflam).pack(side=tk.RIGHT, padx=5, pady=5)
+        
+        # Buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        def use_default():
+            # Let AutoClassifier find default models
+            self.tissue_model_path = None
+            self.inflammation_model_path = None
+            self.config['tissue_model_path'] = ''
+            self.config['inflammation_model_path'] = ''
+            self.save_config()
+            dialog.destroy()
+        
+        def confirm_paths():
+            tissue_path = tissue_var.get()
+            inflam_path = inflam_var.get()
+            
+            if tissue_path and not Path(tissue_path).exists():
+                messagebox.showerror("Error", f"Tissue model path does not exist: {tissue_path}")
+                return
+                
+            if inflam_path and not Path(inflam_path).exists():
+                messagebox.showerror("Error", f"Inflammation model path does not exist: {inflam_path}")
+                return
+                
+            # Save paths
+            self.tissue_model_path = tissue_path if tissue_path else None
+            self.inflammation_model_path = inflam_path if inflam_path else None
+            
+            # Update config
+            self.config['tissue_model_path'] = tissue_path
+            self.config['inflammation_model_path'] = inflam_path
+            self.save_config()
+            
+            dialog.destroy()
+        
+        ttk.Button(btn_frame, text="Use Default", command=use_default).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Confirm", command=confirm_paths).pack(side=tk.RIGHT, padx=5)
+        
+        # Wait for user to make selection
+        self.root.wait_window(dialog)
+
+    def select_annotation_folder(self):
+        """Allow user to select a folder for annotations at startup"""
+        # Try to read last used folder from config file
+        config_file = Path("annotation_config.json")
+        last_folder = None
+        
+        if config_file.exists():
+            try:
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                    last_folder = config.get('annotation_folder')
+            except Exception as e:
+                logging.error(f"Error reading config file: {e}")
+        
+        # Create dialog to select folder
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Select Annotation Folder")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center dialog
+        window_width = 500
+        window_height = 200
+        position_x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (window_width // 2)
+        position_y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (window_height // 2)
+        dialog.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
+        
+        # Path display
+        path_var = tk.StringVar()
+        if last_folder:
+            path_var.set(last_folder)
+        else:
+            path_var.set(str(Path("annotations").absolute()))
+        
+        ttk.Label(dialog, text="Select folder for storing annotations:").pack(padx=10, pady=10)
+        path_entry = ttk.Entry(dialog, textvariable=path_var, width=60)
+        path_entry.pack(padx=10, pady=5, fill=tk.X)
+        
+        def browse_folder():
+            folder = filedialog.askdirectory(
+                title="Select Annotation Folder",
+                initialdir=path_var.get() if path_var.get() else "/"
+            )
+            if folder:
+                path_var.set(folder)
+        
+        def confirm_folder():
+            selected_folder = path_var.get()
+            if selected_folder:
+                # Create folder if it doesn't exist
+                folder_path = Path(selected_folder)
+                folder_path.mkdir(parents=True, exist_ok=True)
+                
+                # Create subfolders
+                (folder_path / "backups").mkdir(exist_ok=True)
+                (folder_path / "clusters").mkdir(exist_ok=True)
+                
+                # Save to config
+                try:
+                    with open(config_file, 'w') as f:
+                        json.dump({'annotation_folder': selected_folder}, f)
+                except Exception as e:
+                    logging.error(f"Error saving config: {e}")
+                
+                # Store in instance
+                self.annotation_folder = folder_path
+                dialog.destroy()
+        
+        # Use default annotations folder
+        def use_default():
+            default_folder = Path("annotations").absolute()
+            default_folder.mkdir(exist_ok=True)
+            (default_folder / "backups").mkdir(exist_ok=True)
+            (default_folder / "clusters").mkdir(exist_ok=True)
+            self.annotation_folder = default_folder
+            dialog.destroy()
+        
+        # Buttons
+        btn_frame = ttk.Frame(dialog)
+        btn_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Button(btn_frame, text="Browse...", command=browse_folder).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Use Default", command=use_default).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Confirm", command=confirm_folder).pack(side=tk.RIGHT, padx=5)
+        
+        # Wait for user selection
+        self.root.wait_window(dialog)
+        
+        # If no folder was selected, use default
+        if not hasattr(self, 'annotation_folder'):
+            default_folder = Path("annotations").absolute()
+            default_folder.mkdir(exist_ok=True)
+            (default_folder / "backups").mkdir(exist_ok=True)
+            (default_folder / "clusters").mkdir(exist_ok=True)
+            self.annotation_folder = default_folder
+
     def setup_auto_backup(self):
         """Setup automatic backup of annotations"""
         def backup():
             if hasattr(self, 'current_wsi_name') and self.current_wsi_name and self.annotations:
                 try:
-                    backup_dir = Path("annotations/backups")
+                    backup_dir = self.annotation_folder / "backups"
                     backup_dir.mkdir(parents=True, exist_ok=True)
                     
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -508,7 +748,8 @@ class AnnotationTool:
         self.wsi_list = WSIListFrame(
             self.paned_window, 
             self.load_selected_wsi,
-            downsample=self.DOWNSAMPLE
+            downsample=self.DOWNSAMPLE,
+            annotation_folder=self.annotation_folder  # Pass the selected folder
         )
         self.paned_window.add(self.wsi_list, weight=1)
         
@@ -549,9 +790,80 @@ class AnnotationTool:
         self.root.bind("<Return>", self.handle_enter_key)
         self.root.bind("<Delete>", lambda e: self.delete_selected_from_list())
         self.root.bind("e", lambda e: self.edit_selected_annotations(e))
+        self.root.bind("<Escape>", lambda e: self.clear_current())
 
-        #  Cluster shortcut
+        # Cluster shortcut
         self.root.bind("c", self.handle_cluster_key)
+        
+        # Display help for keyboard shortcuts
+        self.root.bind("<F1>", self.show_keyboard_shortcut_help)
+        
+        # Quick save for tissue types
+        self.root.bind("1", lambda e: self.quick_save_annotation(tissue_type="corpus"))
+        self.root.bind("2", lambda e: self.quick_save_annotation(tissue_type="antrum"))
+        self.root.bind("3", lambda e: self.quick_save_annotation(tissue_type="intermediate"))
+        self.root.bind("4", lambda e: self.quick_save_annotation(tissue_type="other"))
+
+    def show_keyboard_shortcut_help(self, event=None):
+        """Show help for keyboard shortcuts"""
+        help_text = """
+        Keyboard Shortcuts:
+        
+        Drawing & Saving:
+        Enter - Quick save current annotation
+        Escape - Cancel current drawing
+        1 - Quick save as Corpus
+        2 - Quick save as Antrum
+        3 - Quick save as Intermediate
+        4 - Quick save as Other
+        
+        Editing:
+        E - Edit selected annotation(s)
+        Delete - Delete selected annotation(s)
+        
+        Clusters:
+        C - Start/complete cluster (click twice)
+        
+        Navigation:
+        Mouse wheel - Scroll vertically
+        Shift + Mouse wheel - Scroll horizontally
+        Middle mouse - Pan the view
+        
+        Other:
+        F1 - Show this help
+        """
+        
+        help_dialog = tk.Toplevel(self.root)
+        help_dialog.title("Keyboard Shortcuts")
+        help_dialog.transient(self.root)
+        help_dialog.grab_set()
+        
+        # Center dialog
+        window_width = 400
+        window_height = 500
+        position_x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (window_width // 2)
+        position_y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (window_height // 2)
+        help_dialog.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
+        
+        # Add text with scrollbar
+        text_frame = ttk.Frame(help_dialog)
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        scrollbar = ttk.Scrollbar(text_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        text = tk.Text(text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set)
+        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=text.yview)
+        
+        text.insert(tk.END, help_text)
+        text.config(state=tk.DISABLED)  # Make read-only
+        
+        # Close button
+        ttk.Button(help_dialog, text="Close", command=help_dialog.destroy).pack(pady=10)
+        
+        # Bind escape to close
+        help_dialog.bind("<Escape>", lambda e: help_dialog.destroy())
 
     def handle_enter_key(self, event):
         """Handle Enter key press based on context"""
@@ -565,31 +877,27 @@ class AnnotationTool:
             return "break"
         return "break"
     
-
     def handle_cluster_key(self, event):
         """Handle cluster key press."""
         if not self.current_wsi_name:
             self.status_var.set("No WSI loaded")
             return
 
-        # Get the actual cursor position relative to the canvas viewport
-        canvas_x = self.canvas.winfo_rootx() - self.root.winfo_rootx()
-        canvas_y = self.canvas.winfo_rooty() - self.root.winfo_rooty()
+        # Get absolute mouse coordinates relative to screen
+        root_x, root_y = self.root.winfo_pointerxy()
         
-        # Calculate relative mouse position within canvas
-        relative_x = event.x_root - canvas_x
-        relative_y = event.y_root - canvas_y
-        
-        # Convert to canvas coordinates including scroll offset
-        x = self.canvas.canvasx(relative_x)
-        y = self.canvas.canvasy(relative_y)
+        # Convert to canvas coordinates by finding canvas position relative to root
+        canvas_x = root_x - self.canvas.winfo_rootx() + self.canvas.canvasx(0)
+        canvas_y = root_y - self.canvas.winfo_rooty() + self.canvas.canvasy(0)
+
 
         if self.cluster_start is None:
             # First corner
-            self.start_cluster(x, y)
+            self.start_cluster(canvas_x, canvas_y)
         else:
             # Second corner, complete the cluster
-            self.complete_cluster(x, y)
+            self.complete_cluster(canvas_x, canvas_y)
+
 
     def start_cluster(self, canvas_x, canvas_y):
         """Start a new cluster by setting the first corner at mouse position"""
@@ -597,23 +905,28 @@ class AnnotationTool:
         x = canvas_x / self.current_scale
         y = canvas_y / self.current_scale
         
+        # Fully clear previous state
+        self.canvas.delete('cluster_marker')
         self.cluster_start = (x, y)
+        
         self.status_var.set("Cluster started - Press 'c' again to complete")
         
         # Draw marker at exact cursor position
-        marker_size = 3
+        marker_size = 5  # Increased size for visibility
         self.canvas.create_oval(
             canvas_x - marker_size, canvas_y - marker_size,
             canvas_x + marker_size, canvas_y + marker_size,
             fill='yellow',
             outline='black',
+            width=2,
             tags='cluster_marker'
         )
 
 
     def complete_cluster(self, canvas_x, canvas_y):
         """Complete the cluster with the second corner at mouse position"""
-        if not self.cluster_start:
+        if self.cluster_start is None:
+            self.status_var.set("Error: No cluster start point found")
             return
             
         # Convert to WSI coordinates (unscaled)
@@ -656,29 +969,18 @@ class AnnotationTool:
         # Save clusters to file
         self.save_clusters()
         
-        # Reset for next cluster
-        self.cluster_start = None
-        self.canvas.delete('cluster_marker')
-        self.status_var.set(f"Cluster {cluster['id']} saved")
+        # Automatically process clusters
+        if hasattr(self, 'current_wsi_name') and self.current_wsi_name:
+            self.process_annotations_with_clusters(self.current_wsi_name, self.DOWNSAMPLE)
 
-    def process_current_clusters(self):
-        """Process clusters for current WSI"""
-        if not self.current_wsi_name:
-            messagebox.showwarning("Warning", "Please load a WSI first")
-            return
-            
-        try:
-            # Process clusters
-            self.process_annotations_with_clusters(self.current_wsi_name)  # Removed extra argument
-            
-            # Reload annotations to show updated cluster IDs
-            self.try_load_annotations(self.current_wsi_name)
-            
-            self.status_var.set(f"Processed clusters for {self.current_wsi_name}")
-            
-        except Exception as e:
-            logging.error(f"Error processing clusters: {e}")
-            messagebox.showerror("Error", "Failed to process clusters")
+            # Update the annotation list to show current cluster IDs
+            self.update_annotation_list()
+        
+        # CRITICAL: Reset all state for next cluster
+        self.canvas.delete('cluster_marker')
+        self.cluster_start = None  # Explicitly set to None
+        
+        self.status_var.set(f"Cluster {cluster['id']} saved and processed")
 
     def save_clusters(self):
         """Save clusters to JSON file"""
@@ -686,8 +988,11 @@ class AnnotationTool:
             return
             
         try:
-            cluster_file = Path(f"clusters/{self.current_wsi_name}_clusters.json")
-            cluster_file.parent.mkdir(exist_ok=True)
+            # Ensure directory exists
+            cluster_dir = self.annotation_folder / "clusters"
+            cluster_dir.mkdir(exist_ok=True)
+            
+            cluster_file = cluster_dir / f"{self.current_wsi_name}_clusters.json"
             
             with open(cluster_file, 'w') as f:
                 json.dump(self.clusters, f, indent=2)
@@ -702,7 +1007,154 @@ class AnnotationTool:
         """Process annotations and add cluster IDs"""
         try:
             # Load clusters (coordinates are in full resolution)
-            cluster_file = Path(f"clusters/{wsi_name}_clusters.json")
+            cluster_file = self.annotation_folder / "clusters" / f"{wsi_name}_clusters.json"
+            if not cluster_file.exists():
+                logging.error(f"No clusters found for {wsi_name}")
+                return
+                
+            with open(cluster_file, 'r') as f:
+                clusters = json.load(f)
+            
+            # Process in-memory annotations (for immediate UI update)
+            annotations_updated = 0
+            
+            for annotation in self.annotations:
+                # Get center point of annotation in display coordinates
+                coords = annotation["geometry"]["coordinates"][0]
+                center_x_display = sum(x for x, _ in coords) / len(coords)
+                center_y_display = sum(y for _, y in coords) / len(coords)
+                
+                # Convert to full resolution coordinates
+                center_x_full = center_x_display * self.DOWNSAMPLE / self.current_scale
+                center_y_full = center_y_display * self.DOWNSAMPLE / self.current_scale
+                
+                # Find which cluster contains this point
+                found_cluster = False
+                for cluster in clusters:
+                    bounds = cluster["bounds"]
+                    if (bounds["left"] <= center_x_full <= bounds["right"] and
+                        bounds["top"] <= center_y_full <= bounds["bottom"]):
+                        # Add cluster ID to annotation properties
+                        annotation["properties"]["cluster_id"] = cluster["id"]
+                        found_cluster = True
+                        annotations_updated += 1
+                        break
+                        
+                if not found_cluster:
+                    # If not in any cluster, mark as unclustered
+                    annotation["properties"]["cluster_id"] = None
+            
+            # Now update the on-disk annotations to ensure persistence
+            # First, load the on-disk annotations
+            annotation_file = self.annotation_folder / f"{wsi_name}_annotations.json"
+            if annotation_file.exists():
+                with open(annotation_file, 'r') as f:
+                    disk_annotations = json.load(f)
+                    
+                # Process each on-disk annotation
+                for annotation in disk_annotations:
+                    # Get center point of annotation (coordinates are in full resolution)
+                    coords = annotation["geometry"]["coordinates"][0]
+                    center_x = sum(x for x, _ in coords) / len(coords)
+                    center_y = sum(y for _, y in coords) / len(coords)
+                    
+                    # Find which cluster contains this point
+                    for cluster in clusters:
+                        bounds = cluster["bounds"]
+                        if (bounds["left"] <= center_x <= bounds["right"] and
+                            bounds["top"] <= center_y <= bounds["bottom"]):
+                            # Add cluster ID to annotation properties
+                            annotation["properties"]["cluster_id"] = cluster["id"]
+                            break
+                    else:
+                        # If not in any cluster, mark as unclustered
+                        annotation["properties"]["cluster_id"] = None
+                        
+                # Save updated on-disk annotations
+                with open(annotation_file, 'w') as f:
+                    json.dump(disk_annotations, f, indent=2)
+                    
+            logging.info(f"Successfully processed {annotations_updated} annotations with clusters")
+            self.status_var.set(f"Assigned {annotations_updated} annotations to clusters")
+                
+        except Exception as e:
+            logging.error(f"Error processing clusters: {e}")
+            self.status_var.set("Error processing clusters")
+            
+        return annotations_updated  # Return count for potential use by callers
+
+    def process_current_clusters(self):
+        """Process clusters for current WSI"""
+        if not self.current_wsi_name:
+            messagebox.showwarning("Warning", "Please load a WSI first")
+            return
+            
+        try:
+            # Process clusters
+            self.process_annotations_with_clusters()
+            
+            # Reload annotations to show updated cluster IDs
+            self.update_annotation_list()
+            
+            self.status_var.set(f"Processed clusters for {self.current_wsi_name}")
+            
+        except Exception as e:
+            logging.error(f"Error processing clusters: {e}")
+            messagebox.showerror("Error", "Failed to process clusters")
+
+    def select_annotation(self, event):
+        """Handle right-click selection of annotations"""
+        if not self.current_image:
+            return
+            
+        # Get canvas coordinates considering scroll position
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+
+        # Create click point - coordinates are already in display space (downsampled)
+        click_point = Point(canvas_x, canvas_y)
+        
+        selected = None
+        
+        # Check each annotation
+        for annotation in reversed(self.annotations):  # Reverse to check top-most annotations first
+            try:
+                # Get coordinates - these are already in display space (downsampled)
+                coords = annotation['geometry']['coordinates'][0]
+                
+                # Ensure coordinates are in the correct format
+                coords_tuples = [(float(coord[0]), float(coord[1])) for coord in coords]
+                
+                # Create polygon with display coordinates
+                poly = Polygon(coords_tuples)
+                
+                # Check if point is inside polygon
+                if poly.contains(click_point):
+                    selected = annotation
+                    break
+                    
+            except Exception as e:
+                logging.error(f"Error during annotation selection: {str(e)}")
+                continue
+        
+        # If an annotation was selected, highlight it and show dialog
+        if selected:
+            self.selected_annotation = selected
+            self.highlight_selected_annotation(selected)
+            self.show_annotation_dialog(selected)
+            self.status_var.set("Selected annotation")
+        else:
+            # Clear previous selection if clicking outside
+            if hasattr(self, 'selected_annotation'):
+                delattr(self, 'selected_annotation')
+                self.canvas.delete('highlight')
+                self.status_var.set("Selection cleared")
+
+    def process_annotations_with_clusters(self, wsi_name: str, downsample_factor: int = 16):
+        """Process annotations and add cluster IDs"""
+        try:
+            # Load clusters (coordinates are in full resolution)
+            cluster_file = self.annotation_folder / "clusters" / f"{wsi_name}_clusters.json"
             if not cluster_file.exists():
                 logging.error(f"No clusters found for {wsi_name}")
                 return
@@ -711,7 +1163,7 @@ class AnnotationTool:
                 clusters = json.load(f)
                 
             # Load annotations
-            annotation_file = Path(f"annotations/{wsi_name}_annotations.json")
+            annotation_file = self.annotation_folder / f"{wsi_name}_annotations.json"
             if not annotation_file.exists():
                 logging.error(f"No annotations found for {wsi_name}")
                 return
@@ -757,23 +1209,78 @@ class AnnotationTool:
         else:
             self.status_var.set("No annotation selected for editing")
 
+    def start_move(self, event):
+        """Start moving the selected annotation"""
+        try:
+            # Get canvas coordinates considering scroll position
+            canvas_x = self.canvas.canvasx(event.x)
+            canvas_y = self.canvas.canvasy(event.y)
+            click_point = Point(canvas_x, canvas_y)
+            
+            # Find the annotation to move
+            for annotation in reversed(self.annotations):
+                coords = annotation['geometry']['coordinates'][0]
+                coords_tuples = [(float(coord[0]), float(coord[1])) for coord in coords]
+                poly = Polygon(coords_tuples)
+                
+                if poly.contains(click_point):
+                    self.selected_annotation = annotation
+                    # Store initial mouse position
+                    self.move_start_x = canvas_x
+                    self.move_start_y = canvas_y
+                    # Store initial annotation coordinates
+                    self.original_coords = annotation['geometry']['coordinates'][0].copy()
+                    # Change cursor to indicate movement
+                    self.canvas.config(cursor="fleur")
+                    break
+        except Exception as e:
+            logging.error(f"Error starting move: {str(e)}")
 
-    def quick_save_annotation(self, event=None, tissue_type=None, inflammation_type=None):
+    def move_annotation(self, event):
+        """Move the selected annotation with the mouse"""
+        if hasattr(self, 'selected_annotation') and hasattr(self, 'move_start_x'):
+            try:
+                # Calculate movement delta
+                current_x = self.canvas.canvasx(event.x)
+                current_y = self.canvas.canvasy(event.y)
+                delta_x = current_x - self.move_start_x
+                delta_y = current_y - self.move_start_y
+                
+                # Update coordinates
+                new_coords = []
+                for x, y in self.original_coords:
+                    new_x = float(x) + delta_x
+                    new_y = float(y) + delta_y
+                    new_coords.append([new_x, new_y])
+                
+                # Update annotation coordinates
+                self.selected_annotation['geometry']['coordinates'] = [new_coords]
+                
+                # Redraw all annotations and highlight the selected one
+                self.draw_saved_annotations()
+                self.highlight_selected_annotation(self.selected_annotation)
+                
+            except Exception as e:
+                logging.error(f"Error moving annotation: {str(e)}")
+
+    def quick_save_annotation(self, event=None, tissue_type=None, inflammation_status=None):
         """Save annotation without dialog using last used or default values"""
         if not self.current_points or len(self.current_points) < 3:
             return
             
         # Use provided values, last used values, or defaults
         tissue_type = tissue_type or getattr(self, 'last_tissue_type', list(self.ANNOTATION_OPTIONS['tissue'].keys())[0])
-        inflammation_type = inflammation_type or getattr(self, 'last_inflammation_type', 
-                                                    list(self.ANNOTATION_OPTIONS['inflammation'].keys())[0])
+        inflammation_status = inflammation_status or getattr(self, 'default_inflammation_status', 
+                                                    list(self.ANNOTATION_OPTIONS['inflammation_status'].keys())[0])
         
         # Save the annotation
-        self.save_current_annotation(tissue_type, inflammation_type)
+        self.save_current_annotation(tissue_type, inflammation_status)
         
         # Store as last used values
         self.last_tissue_type = tissue_type
-        self.last_inflammation_type = inflammation_type
+        
+        # Status feedback showing what was saved
+        self.status_var.set(f"Quick saved: {tissue_type} - {inflammation_status}")
 
     def _bind_scrolling(self):
         """Bind all scrolling events"""
@@ -924,14 +1431,19 @@ class AnnotationTool:
             btn_frame, 
             text="Delete", 
             command=self.delete_selected_from_list
-        ).pack(side=tk.LEFT, padx=0)
+        ).pack(side=tk.LEFT, padx=2)
         
         ttk.Button(
             btn_frame, 
             text="Edit",
             command=self.edit_selected_from_list
-        ).pack(side=tk.LEFT, padx=0)
+        ).pack(side=tk.LEFT, padx=2)
 
+        ttk.Button(
+            btn_frame,
+            text="Show Help (F1)",
+            command=self.show_keyboard_shortcut_help
+        ).pack(side=tk.LEFT, padx=2)
         
         # Add selection counter label
         self.selection_label = ttk.Label(frame, text="0 annotations selected")
@@ -950,11 +1462,15 @@ class AnnotationTool:
         # Add current annotations
         for idx, annotation in enumerate(self.annotations, 1):
             tissue_type = annotation['properties']['classification']['tissue_type']
-            inflammation_type = annotation['properties']['classification']['inflammation_type']
+            
+            # Handle both old and new naming convention for backward compatibility
+            inflammation_status = annotation['properties']['classification'].get('inflammation_status', 
+                                 annotation['properties']['classification'].get('inflammation_status', '-'))
+            
             cluster_id = annotation['properties'].get('cluster_id', '-')
             
             self.annotation_listbox.insert(tk.END, 
-                f"{idx}. {tissue_type} - {inflammation_type}  | ({cluster_id})")
+                f"{idx}. {tissue_type} - {inflammation_status}  | ({cluster_id})")
 
     def center_on_annotation(self, annotation):
         """Center the view on the selected annotation"""
@@ -1066,8 +1582,6 @@ class AnnotationTool:
                 logging.error(f"Error during multiple deletion: {str(e)}")
                 messagebox.showerror("Error", "Failed to delete some annotations")
 
-
-
     def edit_selected_from_list(self):
         """Edit selected annotations"""
         selections = self.annotation_listbox.curselection()
@@ -1079,7 +1593,7 @@ class AnnotationTool:
         self.show_bulk_edit_dialog([self.annotations[idx] for idx in selections])
 
     def show_bulk_edit_dialog(self, annotations_to_edit):
-        """Show dialog for editing  annotations at once"""
+        """Show dialog for editing annotations at once"""
         dialog = tk.Toplevel(self.root)
         dialog.title(f"Edit annotation{'s' if len(annotations_to_edit) != 1 else ''}")
         dialog.transient(self.root)
@@ -1103,7 +1617,7 @@ class AnnotationTool:
         inflammation_frame = ttk.LabelFrame(dialog, text="Inflammation Status")
         inflammation_frame.pack(padx=10, pady=5, fill=tk.X)
         
-        inflammation_options = list(self.ANNOTATION_OPTIONS['inflammation'].keys())
+        inflammation_options = list(self.ANNOTATION_OPTIONS['inflammation_status'].keys())
         selected_inflammation = tk.StringVar(value=inflammation_options[0])
         ttk.Label(inflammation_frame, text="Inflammation:").pack(side=tk.LEFT, padx=5)
         ttk.OptionMenu(inflammation_frame, selected_inflammation,
@@ -1116,14 +1630,14 @@ class AnnotationTool:
         )
         count_label.pack(pady=5)
         
-        def save_and_close():
+        def save_and_close(event=None):
             """Apply changes to all selected annotations"""
             tissue_type = selected_tissue.get()
-            inflammation_type = selected_inflammation.get()
+            inflammation_status = selected_inflammation.get()
             
             # Update all selected annotations
             for annotation in annotations_to_edit:
-                self.update_annotation(annotation, tissue_type, inflammation_type)
+                self.update_annotation(annotation, tissue_type, inflammation_status)
             
             self.dialog_saved = True
             dialog.destroy()
@@ -1147,12 +1661,95 @@ class AnnotationTool:
         # Bind closing event
         dialog.protocol("WM_DELETE_WINDOW", on_dialog_close)
 
-        # Modified event bindings to handle the event parameter
-        save_button.bind("<Return>", lambda e: save_and_close())
-        cancel_button.bind("<Escape>", lambda e: on_dialog_close())
+        # Bind Enter key to save
+        dialog.bind("<Return>", save_and_close)
+        
+        # Bind Escape key to cancel
+        dialog.bind("<Escape>", lambda e: on_dialog_close())
 
-    def auto_detect_annotations(self):
-        """Automatically detect and create annotations for tissue regions with buffer zone"""
+    def set_slide_wide_inflammation_status(self, status=None):
+        """Set inflammation status for all annotations in the current slide"""
+        if not self.current_wsi_name:
+            messagebox.showwarning("Warning", "No slide loaded")
+            return
+            
+        if not self.annotations:
+            messagebox.showinfo("Info", "No annotations to update")
+            return
+            
+        # If status not provided, show a selection dialog
+        if status is None:
+            status_dialog = tk.Toplevel(self.root)
+            status_dialog.title("Set Slide-Wide Inflammation Status")
+            status_dialog.transient(self.root)
+            status_dialog.grab_set()
+            
+            # Center dialog
+            window_width = 300
+            window_height = 150
+            position_x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (window_width // 2)
+            position_y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (window_height // 2)
+            status_dialog.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
+            
+            ttk.Label(status_dialog, text="Select inflammation status for all annotations:").pack(pady=10)
+            
+            selected_status = tk.StringVar()
+            selected_status.set(self.default_inflammation_status)  # Use current default
+            
+            frame = ttk.Frame(status_dialog)
+            frame.pack(fill=tk.X, pady=10)
+            
+            # Create radio buttons for each status
+            for option in self.ANNOTATION_OPTIONS['inflammation_status'].keys():
+                ttk.Radiobutton(
+                    frame, 
+                    text=option.capitalize(),
+                    variable=selected_status,
+                    value=option
+                ).pack(anchor=tk.W, padx=20)
+            
+            def apply_status():
+                # Apply selected status and update default
+                status = selected_status.get()
+                self._apply_inflammation_status(status)
+                status_dialog.destroy()
+                
+            # Add buttons
+            button_frame = ttk.Frame(status_dialog)
+            button_frame.pack(fill=tk.X, pady=10)
+            
+            ttk.Button(button_frame, text="Cancel", command=status_dialog.destroy).pack(side=tk.LEFT, padx=5, expand=True)
+            ttk.Button(button_frame, text="Apply", command=apply_status).pack(side=tk.LEFT, padx=5, expand=True)
+            
+            # Bind Enter key to apply
+            status_dialog.bind("<Return>", lambda e: apply_status())
+            
+            # Bind Escape key to cancel
+            status_dialog.bind("<Escape>", lambda e: status_dialog.destroy())
+            
+        else:
+            # If status is provided, apply directly
+            self._apply_inflammation_status(status)
+            
+    def _apply_inflammation_status(self, status):
+        """Apply the inflammation status to all annotations"""
+        count = 0
+        for annotation in self.annotations:
+            annotation['properties']['classification']['inflammation_status'] = status
+            count += 1
+            
+        # Update display
+        self.draw_saved_annotations()
+        self.update_annotation_list()
+        
+        # Save changes
+        self.save_annotations()
+        
+        # Update status
+        self.status_var.set(f"Updated {count} annotations with inflammation status: {status}")
+            
+    def detect_regions_of_interest(self):
+        """Automatically detect regions of interest without classification"""
         if not self.current_image or not hasattr(self, '_current_image_path'):
             messagebox.showwarning("Warning", "Please load a WSI first")
             return
@@ -1307,108 +1904,15 @@ class AnnotationTool:
                         "properties": {
                             "objectType": "annotation",
                             "classification": {
-                                "tissue_type": "other",  # Will be updated by classifier
-                                "inflammation_type": "other",  # Will be updated by classifier
+                                "tissue_type": "other",  # Default type before classification
+                                "inflammation_status": self.default_inflammation_status
                             }
                         }
                     }
                     new_annotations.append(annotation)
-
-            
-            if not hasattr(self, 'auto_classifier'):
-                try:
-                    from auto_classifier import AutoClassifier
-                    # Pass the annotation options when creating the classifier
-                    self.auto_classifier = AutoClassifier(annotation_options=self.ANNOTATION_OPTIONS)
-                except Exception as e:
-                    logging.error(f"Error initializing classifier: {str(e)}")
-                    messagebox.showwarning("Warning", 
-                        "Auto classifier not available. Using default classifications.")
-                    self.auto_classifier = None
-            
-            # Classify regions if classifier is available
-            if hasattr(self, 'auto_classifier') and self.auto_classifier is not None:
-                try:
-                    # FIXED: Get the actual MRXS file path from the current WSI name
-                    # instead of using a hard-coded path
-                    wsi_name = self.current_wsi_name
-                    
-                    # Try to find the corresponding MRXS file
-                    mrxs_paths = []
-                    
-                    # Search in the raw slides directory for matching WSI
-                    if hasattr(self, 'paths') and 'RAW_DIR' in self.paths:
-                        raw_dir = self.paths['RAW_DIR'] / 'slides'
-                        if raw_dir.exists():
-                            pattern = f"{wsi_name}*.mrxs"
-                            mrxs_paths = list(raw_dir.glob(pattern))
-                    
-                    # If not found, try a more generic search
-                    if not mrxs_paths:
-                        # Try to get the parent directory of the current image path
-                        if hasattr(self, '_current_image_path'):
-                            image_dir = self._current_image_path.parent.parent
-                            if image_dir.exists():
-                                pattern = f"**/{wsi_name}*.mrxs"
-                                mrxs_paths = list(image_dir.glob(pattern))
-                    
-                    # If still not found, use a fallback approach based on the PNG filename
-                    if not mrxs_paths and hasattr(self, '_current_image_path'):
-                        # Extract WSI info from PNG filename
-                        png_name = self._current_image_path.stem
-                        base_name = png_name.replace('_downsampled16x', '')
-                        
-                        # Try to find it in common directories
-                        common_dirs = [
-                            Path("./data/raw/slides"),
-                            Path("/data/slides"),
-                            Path("/mnt/data/slides")
-                        ]
-                        
-                        for dir_path in common_dirs:
-                            if dir_path.exists():
-                                pattern = f"{base_name}*.mrxs"
-                                found_paths = list(dir_path.glob(pattern))
-                                if found_paths:
-                                    mrxs_paths = found_paths
-                                    break
-                    
-                    if mrxs_paths:
-                        mrxs_path = mrxs_paths[0]  # Use the first match
-                        logging.info(f"Found matching MRXS file: {mrxs_path}")
-                        
-                        # Update annotations with classifications
-                        classified_annotations = self.auto_classifier.process_wsi(
-                            mrxs_path,  # Use the found path
-                            new_annotations
-                        )
-                        
-                        # Update properties from classifier
-                        for i, annotation in enumerate(new_annotations):
-                            classified = classified_annotations[i]
-                            tissue_type = classified['properties']['classification']['tissue_type']
-                            inflammation_type = classified['properties']['classification']['inflammation_type']
-                            
-                            # Update classification and color
-                            annotation['properties']['classification'].update({
-                                'tissue_type': tissue_type,
-                                'inflammation_type': inflammation_type,
-                                'color': self.ANNOTATION_OPTIONS['tissue'][tissue_type]
-                            })
-                        
-                        self.status_var.set("Regions detected and classified")
-                    else:
-                        logging.warning(f"Could not find matching MRXS file for {wsi_name}")
-                        self.status_var.set("Regions detected (could not find MRXS file for classification)")
-                except Exception as e:
-                    logging.error(f"Error during classification: {str(e)}")
-                    self.status_var.set("Regions detected (classification failed)")
             
             # Add new annotations to existing ones
             self.annotations.extend(new_annotations)
-            
-            # Set flag for auto-detected annotations
-            self.auto_detected = True
             
             # Update display
             self.draw_saved_annotations()
@@ -1419,43 +1923,251 @@ class AnnotationTool:
             
             num_regions = len(new_annotations)
             messagebox.showinfo("Success", 
-                f"Added {num_regions} auto-detected and classified regions")
+                f"Added {num_regions} auto-detected regions. Use 'Auto-classify Regions' to classify them.")
             
         except Exception as e:
-            logging.error(f"Error in auto-detection: {str(e)}")
-            messagebox.showerror("Error", "Failed to auto-detect annotations")
+            logging.error(f"Error in region detection: {str(e)}")
+            messagebox.showerror("Error", "Failed to auto-detect regions")
 
+    def classify_regions(self):
+        """Classify the detected regions using the loaded models"""
+        if not self.current_wsi_name or not self.annotations:
+            messagebox.showwarning("Warning", "No WSI or annotations loaded to classify")
+            return
+        
+        # First, select model paths if they haven't been selected yet
+        if not hasattr(self, 'tissue_model_path') or self.tissue_model_path is None:
+            self.select_model_paths()
+        
+        # Load classifier if not already loaded
+        if not hasattr(self, 'auto_classifier'):
+            try:
+                # Show loading dialog
+                loading_dialog = tk.Toplevel(self.root)
+                loading_dialog.title("Loading Models")
+                loading_dialog.transient(self.root)
+                loading_dialog.grab_set()
+                
+                # Center dialog
+                window_width = 300
+                window_height = 100
+                position_x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (window_width // 2)
+                position_y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (window_height // 2)
+                loading_dialog.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
+                
+                ttk.Label(loading_dialog, text="Loading classification models...").pack(pady=20)
+                self.root.update()
+                
+                # Import and initialize classifier
+                from auto_classifier import AutoClassifier
+                self.auto_classifier = AutoClassifier(
+                    annotation_options=self.ANNOTATION_OPTIONS,
+                    custom_tissue_model=self.tissue_model_path,
+                    custom_inflammation_model=self.inflammation_model_path
+                )
+                
+                # Close loading dialog
+                loading_dialog.destroy()
+                
+            except Exception as e:
+                loading_dialog.destroy() if 'loading_dialog' in locals() else None
+                logging.error(f"Error initializing classifier: {str(e)}")
+                messagebox.showerror("Error", "Could not load classification models")
+                return
+        
+        try:
+            # Try to find the corresponding MRXS file
+            mrxs_paths = []
+            
+            # Search in the raw slides directory for matching WSI
+            if hasattr(self, 'paths') and 'RAW_DIR' in self.paths:
+                raw_dir = self.paths['RAW_DIR'] / 'slides'
+                if raw_dir.exists():
+                    pattern = f"{self.current_wsi_name}*.mrxs"
+                    mrxs_paths = list(raw_dir.glob(pattern))
+            
+            # If not found, try a more generic search
+            if not mrxs_paths:
+                # Try to get the parent directory of the current image path
+                if hasattr(self, '_current_image_path'):
+                    image_dir = self._current_image_path.parent.parent
+                    if image_dir.exists():
+                        pattern = f"**/{self.current_wsi_name}*.mrxs"
+                        mrxs_paths = list(image_dir.glob(pattern))
+            
+            # If still not found, use a fallback approach based on the PNG filename
+            if not mrxs_paths and hasattr(self, '_current_image_path'):
+                # Extract WSI info from PNG filename
+                png_name = self._current_image_path.stem
+                base_name = png_name.replace('_downsampled16x', '')
+                
+                # Try to find it in common directories
+                common_dirs = [
+                    Path("./data/raw/slides"),
+                    Path("/data/slides"),
+                    Path("/mnt/data/slides")
+                ]
+                
+                for dir_path in common_dirs:
+                    if dir_path.exists():
+                        pattern = f"{base_name}*.mrxs"
+                        found_paths = list(dir_path.glob(pattern))
+                        if found_paths:
+                            mrxs_paths = found_paths
+                            break
+            
+            if mrxs_paths:
+                mrxs_path = mrxs_paths[0]  # Use the first match
+                logging.info(f"Found matching MRXS file: {mrxs_path}")
+                
+                # Show progress dialog
+                progress_dialog = tk.Toplevel(self.root)
+                progress_dialog.title("Classifying Regions")
+                progress_dialog.transient(self.root)
+                progress_dialog.grab_set()
+                
+                # Center dialog
+                window_width = 300
+                window_height = 100
+                position_x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (window_width // 2)
+                position_y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (window_height // 2)
+                progress_dialog.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
+                
+                progress_label = ttk.Label(progress_dialog, text="Classifying regions...")
+                progress_label.pack(pady=10)
+                
+                progress_var = tk.DoubleVar()
+                progress_bar = ttk.Progressbar(
+                    progress_dialog, 
+                    orient=tk.HORIZONTAL, 
+                    length=250, 
+                    mode='determinate',
+                    variable=progress_var
+                )
+                progress_bar.pack(pady=10, padx=20)
+                self.root.update()
+                
+                # Process in batches to allow UI updates
+                total_annotations = len(self.annotations)
+                batch_size = 10
+                for i in range(0, total_annotations, batch_size):
+                    batch = self.annotations[i:i+batch_size]
+                    
+                    # Update progress
+                    progress_var.set((i / total_annotations) * 100)
+                    progress_label.config(text=f"Classifying regions... {i}/{total_annotations}")
+                    progress_dialog.update()
+                    
+                    # Classify batch
+                    classified_batch = self.auto_classifier.process_wsi(mrxs_path, batch)
+                    
+                    # Update classifications
+                    for j, classified in enumerate(classified_batch):
+                        idx = i + j
+                        if idx < total_annotations:
+                            tissue_type = classified['properties']['classification']['tissue_type']
+                            self.annotations[idx]['properties']['classification'].update({
+                                'tissue_type': tissue_type,
+                                'color': self.ANNOTATION_OPTIONS['tissue'][tissue_type]
+                            })
+                
+                # Close progress dialog
+                progress_dialog.destroy()
+                
+                # Update display
+                self.draw_saved_annotations()
+                self.update_annotation_list()
+                
+                # Autosave
+                self.save_annotations()
+                
+                self.status_var.set("Regions classified successfully")
+                messagebox.showinfo("Success", "All regions have been classified")
+                
+            else:
+                logging.warning(f"Could not find matching MRXS file for {self.current_wsi_name}")
+                messagebox.showwarning("Warning", "Could not find matching MRXS file for classification")
+                
+        except Exception as e:
+            logging.error(f"Error during classification: {str(e)}")
+            messagebox.showerror("Error", "Failed to classify regions")
+
+    def auto_detect_annotations(self):
+        """Alias for detect_regions_of_interest for backward compatibility"""
+        self.detect_regions_of_interest()
     
     def setup_top_panel(self, parent):
-        """Setup top panel with buttons"""
+        """Setup top panel with buttons and inflammation status controls"""
         top_panel = ttk.Frame(parent)
         top_panel.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
         
-        # Directory loading
-        ttk.Button(top_panel, text="Load Slide Directory", 
-                command=self.load_wsi_directory).pack(side=tk.LEFT, padx=5)
+        # Left side - file operations
+        file_frame = ttk.LabelFrame(top_panel, text="File")
+        file_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
+        
+        ttk.Button(file_frame, text="Load Slide Directory", 
+                command=self.load_wsi_directory).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
                 
-        # Auto-detect button
-        ttk.Button(top_panel, text="Auto-detect Particles", 
-                command=self.auto_detect_annotations).pack(side=tk.LEFT, padx=5)
-
+        # Middle - annotation operations
+        annotation_frame = ttk.LabelFrame(top_panel, text="Annotations")
+        annotation_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
+        
+        # Split auto-detect into two separate functions
+        ttk.Button(annotation_frame, text="Detect Regions", 
+                command=self.detect_regions_of_interest).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
+        
+        ttk.Button(annotation_frame, text="Auto-classify Regions", 
+                command=self.classify_regions).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
+        
+        
+        # Quick inflation status buttons
+        inflammation_frame = ttk.LabelFrame(top_panel, text="Quick Inflammation Status")
+        inflammation_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
+        
+        # Add buttons for quick inflammation status setting
+        for status in self.ANNOTATION_OPTIONS['inflammation_status'].keys():
+            ttk.Button(
+                inflammation_frame,
+                text=f"Set All {status.capitalize()}",
+                command=lambda s=status: self.set_slide_wide_inflammation_status(s)
+            ).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
+        
+        # Default inflammation label
+        self.default_inflammation_label = ttk.Label(
+            inflammation_frame, 
+            text=f"Default: {self.default_inflammation_status.capitalize()}"
+        )
+        self.default_inflammation_label.pack(side=tk.TOP, padx=5, pady=5)
+        
+        # Right side - cluster operations  
+        cluster_frame = ttk.LabelFrame(top_panel, text="Clusters")
+        cluster_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
+        
         # Process clusters button
-        ttk.Button(top_panel, text="Process Clusters", 
-                command=self.process_current_clusters).pack(side=tk.LEFT, padx=5)
+        ttk.Button(cluster_frame, text="Process Clusters", 
+                command=self.process_current_clusters).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
         
         # Delete all clusters button
-        ttk.Button(top_panel, text="Delete All Clusters", 
-                command=self.delete_all_clusters).pack(side=tk.LEFT, padx=5)
+        ttk.Button(cluster_frame, text="Delete All Clusters", 
+                command=self.delete_all_clusters).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
                 
         # Toggle clusters visibility button
-        self.show_clusters = True
         self.toggle_clusters_button = ttk.Button(
-            top_panel, 
+            cluster_frame, 
             text="Hide Clusters",
             command=self.toggle_clusters_visibility
         )
-        self.toggle_clusters_button.pack(side=tk.LEFT, padx=5)
-
+        self.toggle_clusters_button.pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
+        
+        # Help frame
+        help_frame = ttk.LabelFrame(top_panel, text="Help")
+        help_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
+        
+        ttk.Button(
+            help_frame,
+            text="Keyboard Shortcuts (F1)",
+            command=self.show_keyboard_shortcut_help
+        ).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
 
     def on_canvas_configure(self, event):
         """Handle canvas resize events"""
@@ -1481,14 +2193,30 @@ class AnnotationTool:
 
     def setup_status_bar(self, parent):
         """Setup the status bar"""
+        status_frame = ttk.Frame(parent)
+        status_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # Add a divider
+        ttk.Separator(status_frame, orient='horizontal').pack(fill=tk.X, pady=2)
+        
+        # Status text
         self.status_var = tk.StringVar()
+        self.status_var.set("Ready")
+        
         self.status_bar = ttk.Label(
-            parent,
+            status_frame,
             textvariable=self.status_var,
             anchor=tk.W,
             padding=(5, 2)
         )
-        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.status_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Add keyboard shortcut reminder
+        ttk.Label(
+            status_frame,
+            text="Press F1 for help",
+            padding=(5, 2)
+        ).pack(side=tk.RIGHT)
     
     def _handle_trackpad_scroll(self, event):
         """Handle trackpad scrolling"""
@@ -1748,6 +2476,12 @@ class AnnotationTool:
             # Update viewport
             self.schedule_viewport_update()
             
+            # Update default inflammation label
+            if hasattr(self, 'default_inflammation_label'):
+                self.default_inflammation_label.config(
+                    text=f"Default: {self.default_inflammation_status.capitalize()}"
+                )
+            
         except Exception as e:
             logging.error(f"Error finalizing image load: {str(e)}")
             self.handle_loading_error(str(e))
@@ -1760,7 +2494,7 @@ class AnnotationTool:
         
     def try_load_annotations(self, wsi_name: str):
         """Try to load existing annotations for the Slide with scale adjustment"""
-        annotation_path = Path(f"annotations/{wsi_name}_annotations.json")
+        annotation_path = self.annotation_folder / f"{wsi_name}_annotations.json"
         if annotation_path.exists():
             try:
                 with open(annotation_path, 'r') as f:
@@ -1800,7 +2534,7 @@ class AnnotationTool:
             return
             
         try:
-            cluster_file = Path(f"clusters/{self.current_wsi_name}_clusters.json")
+            cluster_file = self.annotation_folder / "clusters" / f"{self.current_wsi_name}_clusters.json"
             if cluster_file.exists():
                 with open(cluster_file, 'r') as f:
                     self.clusters = json.load(f)
@@ -1849,12 +2583,26 @@ class AnnotationTool:
             self.canvas.yview_moveto(0)  # Reset vertical scroll
 
             # Delete the clusters file if it exists
-            cluster_file = Path(f"clusters/{self.current_wsi_name}_clusters.json")
+            cluster_file = self.annotation_folder / "clusters" / f"{self.current_wsi_name}_clusters.json"
             if cluster_file.exists():
                 cluster_file.unlink()
+                
+            # Reset cluster counter - annotations with cluster IDs will be cleared
+            # Cluster IDs will now start from 1 again for new clusters
+            
+            # Also update annotations to clear their cluster IDs
+            for annotation in self.annotations:
+                if "cluster_id" in annotation["properties"]:
+                    annotation["properties"]["cluster_id"] = None
+            
+            # Save annotations to persist the cluster ID removal
+            self.save_annotations()
+            
+            # Update the annotation list
+            self.update_annotation_list()
 
             # Provide user feedback
-            self.status_var.set("All clusters deleted")
+            self.status_var.set("All clusters deleted - numbering will restart from 1")
             logging.info("All clusters have been deleted successfully.")
 
 
@@ -1881,7 +2629,9 @@ class AnnotationTool:
             return
         
         # Create annotations directory if needed
-        Path("annotations").mkdir(exist_ok=True)
+        self.annotation_folder.mkdir(parents=True, exist_ok=True)
+
+        file_path = self.annotation_folder / f"{self.current_wsi_name}_annotations.json"
         
         # Allow saving empty list of annotations
         annotations_to_save = []
@@ -1895,44 +2645,45 @@ class AnnotationTool:
                     "geometry": {
                         "type": "Polygon",
                         "coordinates": [[
-                            # Convert from display coordinates back to full resolution
-                            [x * self.DOWNSAMPLE / self.current_scale, 
-                            y * self.DOWNSAMPLE / self.current_scale]
+                            # Convert from display coordinates back to full resolution and cast to int
+                            [int(x * self.DOWNSAMPLE / self.current_scale), 
+                            int(y * self.DOWNSAMPLE / self.current_scale)]
                             for x, y in annotation["geometry"]["coordinates"][0]
                         ]]
                     }
                 }
                 annotations_to_save.append(new_annotation)
         
-        # Save with WSI name
-        file_path = f"annotations/{self.current_wsi_name}_annotations.json"
+        # Save with proper path
         try:
             with open(file_path, 'w') as f:
                 json.dump(annotations_to_save, f, indent=2)
-                
+                    
             # Force cache clearing for annotation count
             if hasattr(self, 'wsi_list'):
                 self.wsi_list.update_annotation_count(self.current_wsi_name)
-                
+                    
             self.status_var.set(f"Saved annotations for: {self.current_wsi_name}")
-            
+                    
         except Exception as e:
+            logging.error(f"Error saving annotations: {str(e)}")
             messagebox.showerror("Error", f"Failed to save annotations: {str(e)}")
 
-    def save_current_annotation(self, tissue_type: str, inflammation_type: str):
+    def save_current_annotation(self, tissue_type: str, inflammation_status: str):
         """Save the current annotation"""
         annotation = {
             "type": "Feature",
             "id": str(uuid.uuid4()),
             "geometry": {
                 "type": "Polygon",
-                "coordinates": [[list(point) for point in self.current_points]]
+                "coordinates": [[list(map(int, point)) for point in self.current_points]]  # Convert to integers
             },
             "properties": {
                 "objectType": "annotation",
                 "classification": {
                     "tissue_type": tissue_type,
-                    "inflammation_type": inflammation_type
+                    "inflammation_status": inflammation_status,
+                    "color": self.ANNOTATION_OPTIONS['tissue'][tissue_type]  # Add color based on tissue type
                 }
             }
         }
@@ -1949,7 +2700,7 @@ class AnnotationTool:
         
         # Autosave to file
         self.save_annotations()
-        self.status_var.set("New annotation saved")
+        self.status_var.set(f"New annotation saved: {tissue_type} - {inflammation_status}")
 
     def draw_saved_annotations(self):
         """Redraw all saved annotations"""
@@ -1959,17 +2710,24 @@ class AnnotationTool:
         drawing_commands = []
         for annotation in self.annotations:
             coords = annotation['geometry']['coordinates'][0]
-            color = annotation['properties']['classification']['color']
+            tissue_type = annotation['properties']['classification']['tissue_type']
+            
+            # Get color from annotation if available, or from options
+            if 'color' in annotation['properties']['classification']:
+                color = annotation['properties']['classification']['color']
+            else:
+                color = self.ANNOTATION_OPTIONS['tissue'][tissue_type]
+                
             hex_color = f'#{color[0]:02x}{color[1]:02x}{color[2]:02x}'
             
             # Create list of drawing commands
-            for i in range(len(coords) - 1):
+            for i in range(len(coords)):
+                p1 = coords[i]
+                p2 = coords[(i + 1) % len(coords)]  # Wrap around to first point
                 drawing_commands.append((
                     'line',
-                    coords[i][0], 
-                    coords[i][1],
-                    coords[i+1][0], 
-                    coords[i+1][1],
+                    p1[0], p1[1],
+                    p2[0], p2[1],
                     hex_color
                 ))
         
@@ -1979,304 +2737,13 @@ class AnnotationTool:
                 self.canvas.create_line(
                     cmd[1], cmd[2], cmd[3], cmd[4],
                     fill=cmd[5],
-                    width=max(1, 2),
+                    width=3,  # Normal border width
                     tags='saved'
                 )
-
-    def scale_annotations(self, annotations: List[dict], scale_factor: float) -> List[dict]:
-        """Scale annotation coordinates by the given factor"""
-        scaled_annotations = []
-        
-        for annotation in annotations:
-            scaled_annotation = annotation.copy()
-            # Deep copy the coordinates to avoid modifying the original
-            coords = [coord.copy() for coord in annotation['geometry']['coordinates'][0]]
             
-            # Scale each coordinate
-            scaled_coords = [
-                [x * scale_factor, y * scale_factor]
-                for x, y in coords
-            ]
-            
-            scaled_annotation['geometry']['coordinates'] = [scaled_coords]
-            scaled_annotations.append(scaled_annotation)
-            
-        return scaled_annotations
-    
-    def select_annotation(self, event):
-        """Handle right-click selection of annotations"""
-        if not self.current_image:
-            return
-            
-        # Get canvas coordinates considering scroll position
-        canvas_x = self.canvas.canvasx(event.x)
-        canvas_y = self.canvas.canvasy(event.y)
-
-        # Create click point - coordinates are already in display space (downsampled)
-        click_point = Point(canvas_x, canvas_y)
-        
-        selected = None
-        
-        # Check each annotation
-        for annotation in reversed(self.annotations):  # Reverse to check top-most annotations first
-            try:
-                # Get coordinates - these are already in display space (downsampled)
-                coords = annotation['geometry']['coordinates'][0]
-                
-                # Ensure coordinates are in the correct format
-                coords_tuples = [(float(coord[0]), float(coord[1])) for coord in coords]
-                
-                # Create polygon with display coordinates
-                poly = Polygon(coords_tuples)
-                
-                # Check if point is inside polygon
-                if poly.contains(click_point):
-                    selected = annotation
-                    break
-                    
-            except Exception as e:
-                logging.error(f"Error during annotation selection: {str(e)}")
-                logging.error(f"Coordinates: {coords}")
-                logging.error(f"Click point: {click_point}")
-                continue
-        
-        # If an annotation was selected, highlight it and show dialog
-        if selected:
-            self.selected_annotation = selected
-            self.highlight_selected_annotation(selected)
-            self.show_annotation_dialog(selected)
-            self.status_var.set("Selected annotation")
-        else:
-            # Clear previous selection if clicking outside
-            if hasattr(self, 'selected_annotation'):
-                delattr(self, 'selected_annotation')
-                self.canvas.delete('highlight')
-                self.status_var.set("Selection cleared")
-    
-    def start_move(self, event):
-        """Start moving the selected annotation"""
-        try:
-            # Get canvas coordinates considering scroll position
-            canvas_x = self.canvas.canvasx(event.x)
-            canvas_y = self.canvas.canvasy(event.y)
-            click_point = Point(canvas_x, canvas_y)
-            
-            # Find the annotation to move
-            for annotation in reversed(self.annotations):
-                coords = annotation['geometry']['coordinates'][0]
-                coords_tuples = [(float(coord[0]), float(coord[1])) for coord in coords]
-                poly = Polygon(coords_tuples)
-                
-                if poly.contains(click_point):
-                    self.selected_annotation = annotation
-                    # Store initial mouse position
-                    self.move_start_x = canvas_x
-                    self.move_start_y = canvas_y
-                    # Store initial annotation coordinates
-                    self.original_coords = annotation['geometry']['coordinates'][0].copy()
-                    # Change cursor to indicate movement
-                    self.canvas.config(cursor="fleur")
-                    break
-        except Exception as e:
-            logging.error(f"Error starting move: {str(e)}")
-
-    def move_annotation(self, event):
-        """Move the selected annotation with the mouse"""
-        if hasattr(self, 'selected_annotation') and hasattr(self, 'move_start_x'):
-            try:
-                # Calculate movement delta
-                current_x = self.canvas.canvasx(event.x)
-                current_y = self.canvas.canvasy(event.y)
-                delta_x = current_x - self.move_start_x
-                delta_y = current_y - self.move_start_y
-                
-                # Update coordinates
-                new_coords = []
-                for x, y in self.original_coords:
-                    new_x = float(x) + delta_x
-                    new_y = float(y) + delta_y
-                    new_coords.append([new_x, new_y])
-                
-                # Update annotation coordinates
-                self.selected_annotation['geometry']['coordinates'] = [new_coords]
-                
-                # Redraw all annotations and highlight the selected one
-                self.draw_saved_annotations()
-                self.highlight_selected_annotation(self.selected_annotation)
-                
-            except Exception as e:
-                logging.error(f"Error moving annotation: {str(e)}")
-
-    def end_move(self, event):
-        """End annotation movement and save changes"""
+        # Redraw highlights if there's a selected annotation
         if hasattr(self, 'selected_annotation'):
-            try:
-                # Reset cursor
-                self.canvas.config(cursor="")
-                
-                # Save changes
-                self.save_annotations()
-                
-                # Update annotation list to reflect any changes
-                self.update_annotation_list()
-                
-                # Clean up movement variables
-                if hasattr(self, 'move_start_x'):
-                    delattr(self, 'move_start_x')
-                if hasattr(self, 'move_start_y'):
-                    delattr(self, 'move_start_y')
-                if hasattr(self, 'original_coords'):
-                    delattr(self, 'original_coords')
-                
-                self.status_var.set("Annotation moved and saved")
-                
-            except Exception as e:
-                logging.error(f"Error ending move: {str(e)}")
-                self.status_var.set("Error saving moved annotation")
-
-    def start_drawing(self, event):
-        """Start drawing a polygon"""
-        if not self.current_image:
-            return
-        
-        # Get canvas coordinates considering scroll position
-        canvas_x = self.canvas.canvasx(event.x)
-        canvas_y = self.canvas.canvasy(event.y)
-        
-        self.drawing = True
-        self.current_points = [(canvas_x, canvas_y)]
-        self.canvas.create_oval(
-            canvas_x-2, canvas_y-2,
-            canvas_x+2, canvas_y+2,
-            fill='grey',
-            tags='current'
-        )
-    
-    def continue_drawing(self, event):
-        """Continue drawing the polygon"""
-        if not self.drawing:
-            return
-        
-        # Get canvas coordinates considering scroll position
-        canvas_x = self.canvas.canvasx(event.x)
-        canvas_y = self.canvas.canvasy(event.y)
-        
-        self.current_points.append((canvas_x, canvas_y))
-        if len(self.current_points) > 1:
-            p1 = self.current_points[-2]
-            p2 = (canvas_x, canvas_y)
-            self.canvas.create_line(
-                p1[0], p1[1],
-                p2[0], p2[1],
-                fill='grey',
-                width=2,
-                tags='current'
-            )
-    
-    def end_drawing(self, event):
-        """End drawing and prompt for annotation details"""
-        if not self.drawing or len(self.current_points) < 3:
-            self.clear_current()
-            return
-        
-        self.drawing = False
-        
-        # Close the polygon
-        first = self.current_points[0]
-        last = self.current_points[-1]
-        self.canvas.create_line(
-            last[0], last[1],
-            first[0], first[1],
-            fill='grey',
-            width=2,
-            tags='current'
-        )
-        
-        self.show_annotation_dialog()
-            
-    def show_annotation_dialog(self, existing_annotation=None):
-        """Show dialog for annotation details"""
-        dialog = tk.Toplevel(self.root)
-        dialog.title("Annotation Details")
-        dialog.transient(self.root)
-        dialog.grab_set()
-        
-        # Store dialog state
-        self.current_dialog = dialog
-        self.dialog_saved = False
-        
-        # Tissue selection
-        tissue_frame = ttk.LabelFrame(dialog, text="Tissue Type")
-        tissue_frame.pack(padx=10, pady=5, fill=tk.X)
-        
-        tissue_options = list(self.ANNOTATION_OPTIONS['tissue'].keys())
-        selected_tissue = tk.StringVar(value=tissue_options[0])
-        ttk.Label(tissue_frame, text="Tissue:").pack(side=tk.LEFT, padx=5)
-        tissue_menu = ttk.OptionMenu(tissue_frame, selected_tissue, 
-                    tissue_options[0], *tissue_options)
-        tissue_menu.pack(side=tk.LEFT, padx=5)
-        
-        # Inflammation selection
-        inflammation_frame = ttk.LabelFrame(dialog, text="Inflammation Status")
-        inflammation_frame.pack(padx=10, pady=5, fill=tk.X)
-        
-        inflammation_options = list(self.ANNOTATION_OPTIONS['inflammation'].keys())
-        selected_inflammation = tk.StringVar(value=inflammation_options[0])
-        ttk.Label(inflammation_frame, text="Inflammation:").pack(side=tk.LEFT, padx=5)
-        inflammation_menu = ttk.OptionMenu(inflammation_frame, selected_inflammation,
-                        inflammation_options[0], *inflammation_options)
-        inflammation_menu.pack(side=tk.LEFT, padx=5)
-        
-        if existing_annotation:
-            props = existing_annotation['properties']['classification']
-            selected_tissue.set(props.get('tissue_type', tissue_options[0]))
-            selected_inflammation.set(props.get('inflammation_type', inflammation_options[0]))
-        
-        def save_and_close(event=None):
-            """Save annotation and close dialog"""
-            tissue_type = selected_tissue.get()
-            inflammation_type = selected_inflammation.get()
-            
-            if existing_annotation:
-                self.update_annotation(existing_annotation, tissue_type, inflammation_type)
-            else:
-                self.save_current_annotation(tissue_type, inflammation_type)
-            
-            self.dialog_saved = True
-            dialog.destroy()
-        
-        def on_dialog_close():
-            """Handle dialog closing without saving"""
-            if not self.dialog_saved:
-                self.clear_current()
-            dialog.destroy()
-        
-        # Create a frame to hold the buttons
-        button_frame = ttk.Frame(dialog)
-        button_frame.pack(pady=10)
-
-        # Create Cancel button on the left
-        cancel_button = ttk.Button(button_frame, text="Cancel", command=on_dialog_close)
-        cancel_button.pack(side='left', padx=2)
-
-        # Create Save button on the right
-        save_button = ttk.Button(button_frame, text="Save", command=save_and_close)
-        save_button.pack(side='left', padx=2)
-        
-        # Bind Enter key to the dialog itself and all its children
-        dialog.bind("<Return>", save_and_close)
-        for child in [tissue_frame, inflammation_frame]:
-            child.bind("<Return>", save_and_close)
-        tissue_menu.bind("<Return>", save_and_close)
-        inflammation_menu.bind("<Return>", save_and_close)
-        save_button.bind("<Return>", save_and_close)
-
-        # Bind closing event
-        dialog.protocol("WM_DELETE_WINDOW", on_dialog_close)
-        cancel_button.bind("<Escape>", on_dialog_close)
-        
-        # Set focus to the dialog
-        dialog.focus_set()
+            self.highlight_selected_annotation(self.selected_annotation)
 
     def highlight_selected_annotation(self, annotation, clear_previous=True):
         """Highlight the selected annotation with thicker borders but maintain color"""
@@ -2287,7 +2754,13 @@ class AnnotationTool:
             coords = annotation['geometry']['coordinates'][0]
             # Get the tissue type's color
             tissue_type = annotation['properties']['classification']['tissue_type']
-            color = self.ANNOTATION_OPTIONS['tissue'][tissue_type]
+            
+            # Get color from annotation if available, or from options
+            if 'color' in annotation['properties']['classification']:
+                color = annotation['properties']['classification']['color']
+            else:
+                color = self.ANNOTATION_OPTIONS['tissue'][tissue_type]
+                
             hex_color = f'#{color[0]:02x}{color[1]:02x}{color[2]:02x}'
             
             # Draw highlighted outline with thicker border of same color
@@ -2319,11 +2792,15 @@ class AnnotationTool:
         except Exception as e:
             logging.error(f"Error highlighting annotation: {str(e)}")
     
-    def update_annotation(self, annotation, tissue_type: str, inflammation_type: str):
-        """Update an existing annotation without storing color"""
+    def update_annotation(self, annotation, tissue_type: str, inflammation_status: str):
+        """Update an existing annotation"""
+        # Update the color based on the tissue type
+        color = self.ANNOTATION_OPTIONS['tissue'][tissue_type]
+        
         annotation['properties']['classification'].update({
             'tissue_type': tissue_type,
-            'inflammation_type': inflammation_type
+            'inflammation_status': inflammation_status,
+            'color': color
         })
         
         # Redraw annotations
@@ -2340,101 +2817,220 @@ class AnnotationTool:
         # Update the annotation list
         self.update_annotation_list()
     
-    def delete_selected_from_list(self):
-        """Delete multiple selected annotations from the list"""
-        selections = self.annotation_listbox.curselection()
-        if not selections:
-            messagebox.showwarning("Warning", "Please select annotations to delete")
-            return
-        
-        num_selected = len(selections)
-        result = messagebox.askyesno(
-            "Confirm Delete",
-            f"Are you sure you want to delete {num_selected} annotation{'s' if num_selected != 1 else ''}?"
-        )
-        
-        if result:
-            try:
-                # Convert to list and sort in reverse order to preserve indices
-                indices = sorted(list(selections), reverse=True)
-                
-                # Remove annotations
-                for idx in indices:
-                    self.annotations.pop(idx)
-                
-                # Clear highlights
-                self.canvas.delete('highlight')
-                
-                # Clear selection
-                self.selection_label.config(text="0 annotations selected")
-                
-                # Update displays
-                self.draw_saved_annotations()
-                self.update_annotation_list()
-                
-                # Save annotations first
-                self.save_annotations()
-                
-                # Force a refresh of the count in the WSI list
-                if hasattr(self, 'current_wsi_name'):
-                    self.wsi_list.update_annotation_count(self.current_wsi_name)
-                
-                # Update status
-                self.status_var.set(f"Deleted {num_selected} annotation{'s' if num_selected != 1 else ''}")
-                
-            except Exception as e:
-                logging.error(f"Error during multiple deletion: {str(e)}")
-                logging.error(traceback.format_exc())
-                messagebox.showerror("Error", "Failed to delete some annotations")
-
-    def draw_saved_annotations(self):
-        """Redraw all saved annotations"""
-        self.canvas.delete('saved')
-        
-        # Batch drawing for better performance
-        drawing_commands = []
-        for annotation in self.annotations:
-            coords = annotation['geometry']['coordinates'][0]
-            tissue_type = annotation['properties']['classification']['tissue_type']
-            color = self.ANNOTATION_OPTIONS['tissue'][tissue_type]
-            hex_color = f'#{color[0]:02x}{color[1]:02x}{color[2]:02x}'
-            
-            # Create list of drawing commands
-            for i in range(len(coords)):
-                p1 = coords[i]
-                p2 = coords[(i + 1) % len(coords)]  # Wrap around to first point
-                drawing_commands.append((
-                    'line',
-                    p1[0], p1[1],
-                    p2[0], p2[1],
-                    hex_color
-                ))
-        
-        # Execute drawing commands in batch
-        for cmd in drawing_commands:
-            if cmd[0] == 'line':
-                self.canvas.create_line(
-                    cmd[1], cmd[2], cmd[3], cmd[4],
-                    fill=cmd[5],
-                    width=3,  # Normal border width
-                    tags='saved'
-                )
-            
-        # Redraw highlights if there's a selected annotation
-        if hasattr(self, 'selected_annotation'):
-            self.highlight_selected_annotation(self.selected_annotation)
-    
     def clear_current(self):
         """Clear only the current drawing without affecting the background"""
         self.canvas.delete('current')  # Only delete items tagged as 'current'
         self.current_points = []
         self.drawing = False
+        
+    def show_annotation_dialog(self, existing_annotation=None):
+        """Show dialog for annotation details"""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Annotation Details")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Store dialog state
+        self.current_dialog = dialog
+        self.dialog_saved = False
+        
+        # Center dialog
+        window_width = 400
+        window_height = 250
+        position_x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (window_width // 2)
+        position_y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (window_height // 2)
+        dialog.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
+        
+        # Tissue selection
+        tissue_frame = ttk.LabelFrame(dialog, text="Tissue Type")
+        tissue_frame.pack(padx=10, pady=5, fill=tk.X)
+        
+        tissue_options = list(self.ANNOTATION_OPTIONS['tissue'].keys())
+        selected_tissue = tk.StringVar(value=tissue_options[0])
+        ttk.Label(tissue_frame, text="Tissue:").pack(side=tk.LEFT, padx=5)
+        tissue_menu = ttk.OptionMenu(tissue_frame, selected_tissue, 
+                    tissue_options[0], *tissue_options)
+        tissue_menu.pack(side=tk.LEFT, padx=5)
+        
+        # Inflammation selection
+        inflammation_frame = ttk.LabelFrame(dialog, text="Inflammation Status")
+        inflammation_frame.pack(padx=10, pady=5, fill=tk.X)
+        
+        inflammation_options = list(self.ANNOTATION_OPTIONS['inflammation_status'].keys())
+        selected_inflammation = tk.StringVar(value=self.default_inflammation_status)
+        ttk.Label(inflammation_frame, text="Inflammation:").pack(side=tk.LEFT, padx=5)
+        inflammation_menu = ttk.OptionMenu(inflammation_frame, selected_inflammation,
+                        self.default_inflammation_status, *inflammation_options)
+        inflammation_menu.pack(side=tk.LEFT, padx=5)
+        
+        # Get values from existing annotation if editing
+        if existing_annotation:
+            props = existing_annotation['properties']['classification']
+            selected_tissue.set(props.get('tissue_type', tissue_options[0]))
+            # Handle both old and new naming convention for backward compatibility
+            inflammation_status = props.get('inflammation_status', 
+                                props.get('inflammation', self.default_inflammation_status))
+            selected_inflammation.set(inflammation_status)
+        
+        def save_and_close(event=None):
+            """Save annotation and close dialog"""
+            tissue_type = selected_tissue.get()
+            inflammation_status = selected_inflammation.get()
+            
+            # Save as defaults if checkbox is checked
+            if save_defaults_var.get():
+                # Update default inflammation status for future annotations
+                self.default_inflammation_status = inflammation_status
+                # Also save the tissue type as default
+                self.last_tissue_type = tissue_type
+                
+                # Update UI if needed
+                if hasattr(self, 'default_inflammation_label'):
+                    self.default_inflammation_label.config(
+                        text=f"Default: {self.default_inflammation_status.capitalize()}"
+                    )
+            
+            if existing_annotation:
+                self.update_annotation(existing_annotation, tissue_type, inflammation_status)
+            else:
+                self.save_current_annotation(tissue_type, inflammation_status)
+            
+            self.dialog_saved = True
+            dialog.destroy()
+        
+        def on_dialog_close():
+            """Handle dialog closing without saving"""
+            if not self.dialog_saved and not existing_annotation:
+                self.clear_current()
+            dialog.destroy()
+        
+        # Save as defaults checkbox
+        save_defaults_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            dialog, 
+            text="Use as default for future annotations", 
+            variable=save_defaults_var
+        ).pack(pady=5, padx=10, anchor=tk.W)
+        
+        # Create a frame to hold the buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+
+        # Create Cancel button on the left
+        cancel_button = ttk.Button(button_frame, text="Cancel", command=on_dialog_close)
+        cancel_button.pack(side='left', padx=5)
+
+        # Create Save button on the right
+        save_button = ttk.Button(button_frame, text="Save", command=save_and_close)
+        save_button.pack(side='left', padx=5)
+        
+        # Set default button (highlighted when Enter is pressed)
+        save_button.focus_set()
+        
+        # Keyboard shortcuts
+        dialog.bind("<Return>", save_and_close)  # Enter to save
+        dialog.bind("<Escape>", lambda e: on_dialog_close())  # Escape to cancel
+        
+        # Bind closing event
+        dialog.protocol("WM_DELETE_WINDOW", on_dialog_close)
+        
+        # Set focus to the dialog
+        dialog.focus_set()
+        
+    def start_drawing(self, event):
+        """Start drawing a polygon"""
+        if not self.current_image:
+            return
+        
+        # Get canvas coordinates considering scroll position
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+        
+        self.drawing = True
+        self.current_points = [(canvas_x, canvas_y)]
+        self.canvas.create_oval(
+            canvas_x-2, canvas_y-2,
+            canvas_x+2, canvas_y+2,
+            fill='red',  # Change to red for better visibility
+            tags='current'
+        )
+        
+        # Update status
+        self.status_var.set("Drawing annotation - click and drag to continue, release to finish")
     
+    def continue_drawing(self, event):
+        """Continue drawing the polygon"""
+        if not self.drawing:
+            return
+        
+        # Get canvas coordinates considering scroll position
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+        
+        self.current_points.append((canvas_x, canvas_y))
+        if len(self.current_points) > 1:
+            p1 = self.current_points[-2]
+            p2 = (canvas_x, canvas_y)
+            self.canvas.create_line(
+                p1[0], p1[1],
+                p2[0], p2[1],
+                fill='red',  # Change to red for better visibility
+                width=2,
+                tags='current'
+            )
+
+    def end_move(self, event):
+        """End annotation movement and save changes"""
+        if hasattr(self, 'selected_annotation'):
+            try:
+                # Reset cursor
+                self.canvas.config(cursor="")
+                
+                # Save changes
+                self.save_annotations()
+                
+                # Update annotation list to reflect any changes
+                self.update_annotation_list()
+                
+                # Clean up movement variables
+                if hasattr(self, 'move_start_x'):
+                    delattr(self, 'move_start_x')
+                if hasattr(self, 'move_start_y'):
+                    delattr(self, 'move_start_y')
+                if hasattr(self, 'original_coords'):
+                    delattr(self, 'original_coords')
+                
+                self.status_var.set("Annotation moved and saved")
+                
+            except Exception as e:
+                logging.error(f"Error ending move: {str(e)}")
+                self.status_var.set("Error saving moved annotation")
+    
+    def end_drawing(self, event):
+        """End drawing and prompt for annotation details"""
+        if not self.drawing or len(self.current_points) < 3:
+            self.clear_current()
+            return
+        
+        self.drawing = False
+        
+        # Close the polygon
+        first = self.current_points[0]
+        last = self.current_points[-1]
+        self.canvas.create_line(
+            last[0], last[1],
+            first[0], first[1],
+            fill='red',  # Change to red for better visibility
+            width=2,
+            tags='current'
+        )
+        
+        # Show annotation dialog
+        self.show_annotation_dialog()
     
     def run(self):
         """Start the application"""
         self.root.mainloop()
-
 if __name__ == "__main__":
     app = AnnotationTool()
     app.run()
