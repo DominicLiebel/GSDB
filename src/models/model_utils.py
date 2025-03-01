@@ -40,18 +40,15 @@ def load_model(model_path: Path, device: torch.device, architecture: str = "giga
         # Initialize the model architecture
         if architecture == "gigapath":
             model = GigaPathClassifier(num_classes=1)
-        elif architecture == "resnet18":
-            model = timm.create_model("resnet18", pretrained=True, num_classes=1)
-        elif architecture == "swin_v2_b":
-            model = timm.create_model("swin_v2_b", pretrained=True, num_classes=1)
-        elif architecture == "convnext_large":
-            model = timm.create_model("convnext_large", pretrained=True, num_classes=1)
-        elif architecture == "densenet121":
-            model = timm.create_model("densenet121", pretrained=True, num_classes=1)
-        elif architecture == "densenet169":
-            model = timm.create_model("densenet169", pretrained=True, num_classes=1)
+        elif architecture in ["resnet18", "swin_v2_b", "convnext_large", "densenet121", "densenet169"]:
+            # Use HistologyClassifier for these custom architectures
+            model = HistologyClassifier(model_name=architecture, num_classes=1)
         else:
-            raise ValueError(f"Unsupported architecture: {architecture}")
+            # Try to use timm directly for other architectures
+            try:
+                model = timm.create_model(architecture, pretrained=True, num_classes=1)
+            except Exception as e:
+                raise ValueError(f"Unsupported architecture: {architecture}. Error: {str(e)}")
         
         # Check file extension to determine loading method
         file_extension = model_path.suffix.lower()

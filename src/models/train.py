@@ -50,28 +50,8 @@ import src.models.metrics_utils as metrics_utils
 import src.models.training_utils as training_utils
 from src.config.paths import get_project_paths, add_path_args
 
-# Import models and weights
-from torchvision.models import (
-    convnext_large, ConvNeXt_Large_Weights,
-    swin_v2_b, Swin_V2_B_Weights,
-    resnet18, ResNet18_Weights
-)
-
 def load_config(config_dir: Path, task: str, model_name: str = None) -> dict:
-    """Load task-specific and model-specific configuration from unified YAML file.
-    
-    Args:
-        config_dir (Path): Directory containing configuration files
-        task (str): Task identifier ('inflammation' or 'tissue')
-        model_name (str, optional): Model identifier to load specific configuration
-            
-    Returns:
-        dict: Configuration dictionary containing model and training parameters
-        
-    Raises:
-        FileNotFoundError: If config file doesn't exist
-        KeyError: If specified task or model not found in config file
-    """
+    """Load task-specific and model-specific configuration from unified YAML file."""
     config_path = config_dir / 'model_config.yaml'
     try:
         with open(config_path, 'r') as f:
@@ -99,8 +79,6 @@ def load_config(config_dir: Path, task: str, model_name: str = None) -> dict:
         model_config = task_config[model_name]
         
         # Combine configurations with priority order
-        # 1. Model-specific config (highest priority)
-        # 2. Common config (lowest priority)
         result_config = common_config.copy()
         result_config.update(model_config)
         
@@ -111,16 +89,13 @@ def load_config(config_dir: Path, task: str, model_name: str = None) -> dict:
         result_config['task'] = task
         result_config['selected_model'] = model_name
         
+        # Log AFTER result_config is created
+        logging.info(f"Loaded config: {json.dumps(result_config, indent=2, default=str)}")
+        
         return result_config
         
     except FileNotFoundError:
         logging.error(f"Config file not found: {config_path}")
-        raise
-    except yaml.YAMLError as e:
-        logging.error(f"Error parsing config file: {e}")
-        raise
-    except KeyError as e:
-        logging.error(f"Configuration error: {e}")
         raise
 
 def get_transforms(task: str, is_training: bool = False, config: dict = None) -> T.Compose:

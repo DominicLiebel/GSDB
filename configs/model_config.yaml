@@ -98,11 +98,10 @@ inflammation:
         random_horizontal_flip: true
         random_vertical_flip: true
         color_jitter:
-          brightness: 0.1
-          contrast: 0.1
+          enabled: false
         random_rotation:
           enabled: true
-          degrees: 45
+          degrees: 180
         random_blur:
           enabled: true
           kernel_size: 3
@@ -138,11 +137,10 @@ inflammation:
         random_horizontal_flip: true
         random_vertical_flip: true
         color_jitter:
-          brightness: 0.1
-          contrast: 0.1
+          enabled: false
         random_rotation:
           enabled: true
-          degrees: 45
+          degrees: 180
         random_blur:
           enabled: true
           kernel_size: 3
@@ -175,16 +173,15 @@ inflammation:
         random_horizontal_flip: true
         random_vertical_flip: true
         color_jitter:
-          brightness: 0.2
-          contrast: 0.2
+          enabled: false
         random_rotation: 
-          enabled: false
-        random_blur:
-          enabled: false
-        random_affine:
           enabled: true
-          degrees: 15
-          translate: [0.1, 0.1]
+          degrees: 180
+        random_blur:
+          enabled: true
+          kernel_size: 3
+        random_affine:
+          enabled: false
 
   convnext_large:
     architecture:
@@ -211,16 +208,15 @@ inflammation:
         random_horizontal_flip: true
         random_vertical_flip: true
         color_jitter:
-          brightness: 0.2
-          contrast: 0.2
+          enabled: false
         random_rotation: 
-          enabled: false
-        random_blur:
-          enabled: false
-        random_affine:
           enabled: true
-          degrees: 15
-          translate: [0.1, 0.1]
+          degrees: 180
+        random_blur:
+          enabled: true
+          kernel_size: 3
+        random_affine:
+          enabled: false
 
   swin_v2_b:
     architecture:
@@ -247,16 +243,15 @@ inflammation:
         random_horizontal_flip: true
         random_vertical_flip: true
         color_jitter:
-          brightness: 0.2
-          contrast: 0.2
+          enabled: false
         random_rotation: 
-          enabled: false
-        random_blur:
-          enabled: false
-        random_affine:
           enabled: true
-          degrees: 15
-          translate: [0.1, 0.1]
+          degrees: 180
+        random_blur:
+          enabled: true
+          kernel_size: 3
+        random_affine:
+          enabled: false
 
 # Tissue task configurations
 tissue:
@@ -323,10 +318,10 @@ tissue:
         random_horizontal_flip: true
         random_vertical_flip: true
         color_jitter:
-          brightness: 0.2
-          contrast: 0.2
-        random_rotation: 
           enabled: false
+        random_rotation: 
+          enabled: true
+          degrees: 180
         random_blur:
           enabled: false
         random_affine:
@@ -337,14 +332,14 @@ tissue:
       name: convnext_large
       pretrained: true
       feature_extraction: false
-    batch_size: 32
-    dropout_rate: 0.4
+    batch_size: 64
+    dropout_rate: 0.08032651841331968
     epochs: 50
     optimizer:
       name: AdamW
-      learning_rate: 3e-5
-      weight_decay: 8e-6
-    pos_weight: 0.8
+      learning_rate: 0.0007554560492975331
+      weight_decay: 1.7518424648360045e-05
+    pos_weight: 0.693469462948584
     scheduler:
       enabled: true
       name: CosineAnnealingLR
@@ -357,10 +352,10 @@ tissue:
         random_horizontal_flip: true
         random_vertical_flip: true
         color_jitter:
-          brightness: 0.2
-          contrast: 0.2
-        random_rotation: 
           enabled: false
+        random_rotation: 
+          enabled: true
+          degrees: 180
         random_blur:
           enabled: false
         random_affine:
@@ -391,10 +386,10 @@ tissue:
         random_horizontal_flip: true
         random_vertical_flip: true
         color_jitter:
-          brightness: 0.2
-          contrast: 0.2
-        random_rotation: 
           enabled: false
+        random_rotation: 
+          enabled: true
+          degrees: 180
         random_blur:
           enabled: false
         random_affine:

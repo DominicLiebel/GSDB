@@ -8,7 +8,6 @@ to help new contributors understand the project structure and architecture.
 ```
 GSDB/
 ├── configs/               # Configuration files
-│   ├── data_config.yaml   # Dataset configuration
 │   └── model_config.yaml  # Model and training configuration
 ├── data/                  # Data storage
 │   ├── processed/         # Processed data (tiles)

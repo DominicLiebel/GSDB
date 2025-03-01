@@ -35,18 +35,6 @@ project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
-# Import path configuration
-from src.config.paths import get_project_paths
-
-# Get project paths
-paths = get_project_paths()
-BASE_DIR = paths["BASE_DIR"]
-CONFIG_DIR = paths["CONFIG_DIR"]
-RESULTS_DIR = paths["RESULTS_DIR"]
-LOG_DIR = paths["LOGS_DIR"]
-MODEL_DIR = paths["MODELS_DIR"]
-TUNING_DIR = paths["TUNING_DIR"]
-
 # Third-party imports
 import optuna
 from optuna.trial import Trial
