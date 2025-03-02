@@ -129,18 +129,68 @@ def calculate_roc_data(df: pd.DataFrame, task: str, level: str) -> Tuple[np.ndar
     
     return fpr, tpr, roc_auc
 
-def plot_combined_roc_curves(model_data: Dict[str, Dict[str, Tuple]], 
-                            task: str, 
-                            level: str,
-                            output_path: Path) -> None:
+def get_class_names(task: str, df: pd.DataFrame = None) -> Tuple[str, str]:
     """
-    Plot combined ROC curves for multiple models.
+    Get the positive and negative class names for a given task.
+    
+    Args:
+        task: Classification task ('tissue' or 'inflammation')
+        df: Optional DataFrame with predictions to detect class labels
+        
+    Returns:
+        Tuple of (positive_class, negative_class)
+    """
+    if task == 'inflammation':
+        positive_class = "Inflamed"
+        negative_class = "Non-inflamed"
+        
+        # Try to detect actual labels if dataframe is provided
+        if df is not None and 'inflammation_type' in df.columns:
+            # Find the unique values in the inflammation_type column
+            # that correspond to positive (1) labels
+            pos_values = df[df['label'] == 1]['inflammation_type'].unique()
+            neg_values = df[df['label'] == 0]['inflammation_type'].unique()
+            
+            if len(pos_values) > 0:
+                positive_class = ', '.join(pos_values)
+            if len(neg_values) > 0:
+                negative_class = ', '.join(neg_values)
+                
+    elif task == 'tissue':
+        positive_class = "Corpus"
+        negative_class = "Antrum"
+        
+        # Try to detect actual labels if dataframe is provided
+        if df is not None and 'tissue_type' in df.columns:
+            # Find the unique values in the tissue_type column
+            # that correspond to positive (1) labels
+            pos_values = df[df['label'] == 1]['tissue_type'].unique()
+            neg_values = df[df['label'] == 0]['tissue_type'].unique()
+            
+            if len(pos_values) > 0:
+                positive_class = ', '.join(pos_values)
+            if len(neg_values) > 0:
+                negative_class = ', '.join(neg_values)
+    else:
+        positive_class = "Positive"
+        negative_class = "Negative"
+        
+    return positive_class, negative_class
+
+def plot_combined_roc_curves(model_data: Dict[str, Dict[str, Tuple]], 
+                           task: str, 
+                           level: str,
+                           output_path: Path,
+                           sample_df: pd.DataFrame = None) -> None:
+    """
+    Plot combined ROC curves for multiple models with class identification.
     
     Args:
         model_data: Dictionary of model data
         task: Classification task
         level: Level to plot (tile, particle, or slide)
         output_path: Path to save the plot
+        sample_df: Sample DataFrame to determine class names
     """
     # Create scientific plot with square format
     plt.figure(figsize=(8, 8))
@@ -163,14 +213,19 @@ def plot_combined_roc_curves(model_data: Dict[str, Dict[str, Tuple]],
     # Configure plot
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate', fontsize=14)
-    plt.ylabel('True Positive Rate', fontsize=14)
+    
+    # Get class names for the task
+    positive_class, negative_class = get_class_names(task, sample_df)
+    
+    # Add class labels to axis labels
+    plt.xlabel(f'False Positive Rate (1-Specificity)\nNegative class: {negative_class}', fontsize=14)
+    plt.ylabel(f'True Positive Rate (Sensitivity)\nPositive class: {positive_class}', fontsize=14)
     
     level_name = level.capitalize()
     if task == 'tissue':
-        title = f'{level_name}-Level ROC Curves - Tissue Classification'
+        title = f'{level_name}-Level ROC Curves - Tissue Classification\nPositive: {positive_class}, Negative: {negative_class}'
     else:  # inflammation
-        title = f'{level_name}-Level ROC Curves - Inflammation Classification'
+        title = f'{level_name}-Level ROC Curves - Inflammation Classification\nPositive: {positive_class}, Negative: {negative_class}'
     
     plt.title(title, fontsize=16)
     plt.legend(loc="lower right", fontsize=12)
@@ -184,9 +239,14 @@ def plot_combined_roc_curves(model_data: Dict[str, Dict[str, Tuple]],
     # Ensure aspect ratio is equal (square plot)
     plt.gca().set_aspect('equal', adjustable='box')
     
-    # Save figure with high resolution
+    # Add annotation box with class information
+    plt.figtext(0.5, -0.01, 
+               f"Class information:\nPositive (1): {positive_class}\nNegative (0): {negative_class}",
+               ha="center", fontsize=12, bbox={"facecolor":"lightgray", "alpha":0.5, "pad":5})
+    
+    # Save figure with high resolution and extra padding for annotation
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
     plt.close()
 
 def main():
@@ -249,13 +309,40 @@ def main():
     else:
         levels_to_plot = [args.level]
     
+    # Store sample dataframes for class name detection
+    tissue_sample_df = None
+    inflammation_sample_df = None
+    
+    # Try to find sample dataframes with class information
+    for i, model_dir in enumerate(args.models):
+        try:
+            df, task = get_model_results(results_dir, model_dir)
+            
+            if task == 'tissue' and tissue_sample_df is None:
+                # Try to find a dataframe with tissue_type information
+                if 'tissue_type' in df.columns:
+                    tissue_sample_df = df
+                    print(f"Found tissue class information in model: {model_dir}")
+                    
+            if task == 'inflammation' and inflammation_sample_df is None:
+                # Try to find a dataframe with inflammation_type information
+                if 'inflammation_type' in df.columns:
+                    inflammation_sample_df = df
+                    print(f"Found inflammation class information in model: {model_dir}")
+                    
+            if tissue_sample_df is not None and inflammation_sample_df is not None:
+                break  # Found both, no need to continue
+                
+        except Exception:
+            continue
+    
     if args.task in ['tissue', 'both'] and tissue_models:
         for level in levels_to_plot:
             if level == 'slide':  # Skip invalid combination
                 continue
                 
             output_path = output_dir / f'tissue_{level}_roc_comparison.png'
-            plot_combined_roc_curves(tissue_models, 'tissue', level, output_path)
+            plot_combined_roc_curves(tissue_models, 'tissue', level, output_path, tissue_sample_df)
             print(f"Generated tissue {level}-level ROC comparison: {output_path}")
     
     if args.task in ['inflammation', 'both'] and inflammation_models:
@@ -264,7 +351,7 @@ def main():
                 continue
                 
             output_path = output_dir / f'inflammation_{level}_roc_comparison.png'
-            plot_combined_roc_curves(inflammation_models, 'inflammation', level, output_path)
+            plot_combined_roc_curves(inflammation_models, 'inflammation', level, output_path, inflammation_sample_df)
             print(f"Generated inflammation {level}-level ROC comparison: {output_path}")
 
 if __name__ == "__main__":

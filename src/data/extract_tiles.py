@@ -36,6 +36,12 @@ def process_tile_batch(params: Tuple) -> List[Optional[Tuple]]:
     """Process a batch of tiles from a single WSI using read_region"""
     wsi_path, tile_coords, polygon, downsample, tile_size = params
     results = []
+    wsi = None
+    
+    # Verify file exists before opening
+    if not Path(wsi_path).exists():
+        logging.error(f"WSI file does not exist: {wsi_path}")
+        return []
     
     try:
         wsi = openslide.OpenSlide(str(wsi_path))
@@ -56,11 +62,16 @@ def process_tile_batch(params: Tuple) -> List[Optional[Tuple]]:
                         0,  # level 0 = full resolution
                         (tile_size * downsample, tile_size * downsample)
                     )
-                    # Convert to RGB and resize
-                    tile = tile.convert("RGB")
-                    tile = tile.resize((tile_size, tile_size), Image.Resampling.LANCZOS)
-                    tile_array = np.asarray(tile, dtype=np.uint8, order='C')
-                    results.append((orig_x, orig_y, tile_array))
+                    try:
+                        # Convert to RGB and resize
+                        tile = tile.convert("RGB")
+                        tile = tile.resize((tile_size, tile_size), Image.Resampling.LANCZOS)
+                        tile_array = np.asarray(tile, dtype=np.uint8, order='C')
+                        results.append((orig_x, orig_y, tile_array))
+                    finally:
+                        # Ensure the image is closed to prevent resource leaks
+                        if hasattr(tile, 'close'):
+                            tile.close()
                     
             except Exception as e:
                 logging.error(f"Error processing tile at ({orig_x}, {orig_y}): {str(e)}")
@@ -71,8 +82,12 @@ def process_tile_batch(params: Tuple) -> List[Optional[Tuple]]:
         return []
         
     finally:
-        if 'wsi' in locals():
-            wsi.close()
+        # Always ensure the WSI is closed, even if exceptions occur
+        if wsi is not None:
+            try:
+                wsi.close()
+            except Exception as e:
+                logging.error(f"Error closing WSI: {str(e)}")
             
     return results
 
@@ -110,11 +125,19 @@ class WSITileExtractor:
         return len(existing_files) > 0
 
     def extract_tiles(self, wsi_path: Path, annotation_data: List[dict], output_dir: Path) -> None:
-        try:
-            with openslide.OpenSlide(str(wsi_path)) as wsi:
-                wsi_name = wsi_path.stem
+        # First verify the WSI file exists
+        if not wsi_path.exists():
+            self.logger.error(f"WSI file not found: {wsi_path}")
+            return
             
-            self.logger.info(f"Processing {wsi_path.stem} from {wsi_path.parent}")
+        try:
+            # Get the WSI name first by checking file existence
+            wsi_name = wsi_path.stem
+            
+            # Open the slide just to verify it's valid, then close it
+            with openslide.OpenSlide(str(wsi_path)) as wsi:
+                dimensions = wsi.dimensions
+                self.logger.info(f"Processing {wsi_path.stem} from {wsi_path.parent}, dimensions: {dimensions}")
 
             for idx, annotation in enumerate(annotation_data):
                 try:
@@ -172,6 +195,10 @@ class WSITileExtractor:
                                 )
                                 futures.append(future)
 
+                            # Create locks for file output to prevent race conditions
+                            from threading import Lock
+                            output_lock = Lock()
+                            
                             for future in tqdm(as_completed(futures), 
                                             total=len(futures),
                                             desc=f"Processing {wsi_name} particle {idx}"):
@@ -192,11 +219,21 @@ class WSITileExtractor:
                                                     f"size_{original_size}x{original_size}.png"
                                                 )
                                                 
-                                                tile.save(output_dir / filename, "PNG", quality=100)
+                                                # Use a lock to prevent race conditions when multiple processes
+                                                # try to write files to the same directory
+                                                with output_lock:
+                                                    # Check again if the tile already exists to avoid race conditions
+                                                    output_path = output_dir / filename
+                                                    if not output_path.exists():
+                                                        tile.save(output_path, "PNG", quality=100)
                                                 
                                             except Exception as e:
                                                 self.logger.error(f"Error saving tile at ({orig_x}, {orig_y}): {str(e)}")
                                                 continue
+                                            finally:
+                                                # Ensure the tile image is closed
+                                                if hasattr(tile, 'close'):
+                                                    tile.close()
                                 except Exception as e:
                                     self.logger.error(f"Error processing batch result: {str(e)}")
                                     continue

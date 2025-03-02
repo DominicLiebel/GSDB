@@ -48,7 +48,16 @@ def setup_logging(log_dir: Path) -> None:
 
 def downsample_wsi(wsi_file: str, output_dir: str, downsample: int = DOWNSAMPLE) -> bool:
     """Downsample WSI and save the result"""
-    wsi_name = Path(wsi_file).stem
+    wsi_path = Path(wsi_file)
+    wsi_name = wsi_path.stem
+    wsi = None
+    img = None
+    
+    # First verify the file exists
+    if not wsi_path.exists():
+        logging.error(f"WSI file does not exist: {wsi_file}")
+        return False
+    
     try:
         logging.debug(f"Opening WSI file: {wsi_file}")
         wsi = openslide.OpenSlide(wsi_file)
@@ -62,6 +71,11 @@ def downsample_wsi(wsi_file: str, output_dir: str, downsample: int = DOWNSAMPLE)
         # Find the best level and log downsampling details
         best_level = wsi.get_best_level_for_downsample(downsample)
         level_downsample = wsi.level_downsamples[best_level]
+        
+        if level_downsample <= 0:
+            logging.error(f"Invalid downsample factor: {level_downsample}")
+            return False
+            
         logging.debug(f"Selected level {best_level} with downsample factor {level_downsample}")
         
         # Calculate and log the region size at this level
@@ -75,27 +89,51 @@ def downsample_wsi(wsi_file: str, output_dir: str, downsample: int = DOWNSAMPLE)
         # Additional downsampling if needed
         if level_downsample < downsample:
             additional_downsample = downsample / level_downsample
+            if additional_downsample <= 0:
+                logging.error(f"Invalid additional downsample factor: {additional_downsample}")
+                return False
+                
             new_width = int(level_width / additional_downsample)
             new_height = int(level_height / additional_downsample)
+            
+            # Ensure dimensions are at least 1 pixel
+            new_width = max(1, new_width)
+            new_height = max(1, new_height)
+            
             logging.debug(f"Additional resize needed. New dimensions: {new_width}x{new_height}")
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
         
+        # Create output directory if it doesn't exist
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
         # Save downsampled image
-        output_file = Path(output_dir) / f"{wsi_name}_downsampled{DOWNSAMPLE}x.png"
+        output_file = output_path / f"{wsi_name}_downsampled{DOWNSAMPLE}x.png"
         logging.debug(f"Saving image to: {output_file}")
         img.save(output_file, format="PNG", optimize=True)
         
         file_size = output_file.stat().st_size / (1024 * 1024)  # Size in MB
         logging.info(f"Successfully saved downsampled WSI: {output_file} (Size: {file_size:.2f} MB)")
         
-        wsi.close()
         return True
         
     except Exception as e:
         logging.error(f"Error processing {wsi_name}: {str(e)}", exc_info=True)
-        if 'wsi' in locals():
-            wsi.close()
         return False
+        
+    finally:
+        # Clean up resources in finally block to ensure they're always closed
+        if img is not None and hasattr(img, 'close'):
+            try:
+                img.close()
+            except Exception as e:
+                logging.error(f"Error closing image: {str(e)}")
+                
+        if wsi is not None:
+            try:
+                wsi.close()
+            except Exception as e:
+                logging.error(f"Error closing WSI: {str(e)}")
 
 def main():
     # Parse command line arguments

@@ -60,8 +60,21 @@ class DatasetProcessor:
         }
     
     def process_annotation_file(self, file_path: Path) -> tuple[Dict, List[Dict]]:
-        with open(file_path, 'r') as f:
-            annotations = json.load(f)
+        # Verify file exists
+        if not file_path.exists():
+            logging.error(f"Annotation file does not exist: {file_path}")
+            slide_name = file_path.name.split('_annotations.')[0] if '_annotations.' in file_path.name else file_path.stem
+            slide_info = self.parse_slide_info(slide_name)
+            return {**slide_info, 'inflammation_status': None}, []
+        
+        try:
+            with open(file_path, 'r') as f:
+                annotations = json.load(f)
+        except json.JSONDecodeError as e:
+            logging.error(f"Invalid JSON in annotation file {file_path}: {str(e)}")
+            slide_name = file_path.name.split('_annotations.')[0]
+            slide_info = self.parse_slide_info(slide_name)
+            return {**slide_info, 'inflammation_status': None}, []
         
         slide_info = self.parse_slide_info(file_path.name.split('_annotations.')[0])
         inflammation_status = None
@@ -103,28 +116,59 @@ class DatasetProcessor:
         """Find all slides by analyzing both annotation files and tile directory."""
         all_slides = set()
         
-        # Get slides from annotation files
-        for json_file in self.annotations_dir.glob('*_annotations.json'):
-            slide_name = json_file.name.split('_annotations.')[0]
-            all_slides.add(slide_name)
-        
-        # Get slides from tiles directory to catch any without annotations
-        for png_file in self.tiles_dir.glob('**/*.png'):
-            filename = png_file.name
-            try:
-                parts = filename.split('_')
-                if len(parts) >= 4:  # Make sure we have enough parts for a slide name
-                    slide_name = '_'.join(parts[:4])
+        # Check if directories exist
+        if not self.annotations_dir.exists():
+            logging.error(f"Annotations directory does not exist: {self.annotations_dir}")
+        else:
+            # Get slides from annotation files
+            for json_file in self.annotations_dir.glob('*_annotations.json'):
+                if json_file.exists():  # Additional check in case file was deleted during processing
+                    slide_name = json_file.name.split('_annotations.')[0]
                     all_slides.add(slide_name)
-            except Exception:
-                continue
+        
+        # Check if tiles directory exists
+        if not self.tiles_dir.exists():
+            logging.error(f"Tiles directory does not exist: {self.tiles_dir}")
+        else:
+            # Get slides from tiles directory to catch any without annotations
+            for png_file in self.tiles_dir.glob('**/*.png'):
+                if png_file.exists():  # Additional check in case file was deleted during processing
+                    filename = png_file.name
+                    try:
+                        parts = filename.split('_')
+                        if len(parts) >= 4:  # Make sure we have enough parts for a slide name
+                            slide_name = '_'.join(parts[:4])
+                            all_slides.add(slide_name)
+                    except Exception as e:
+                        logging.debug(f"Could not parse filename: {filename} - {str(e)}")
+                        continue
                 
+        logging.info(f"Found {len(all_slides)} unique slides in total")
         return all_slides
     
     def count_tiles_per_particle(self) -> pd.DataFrame:
+        # Check if directory exists
+        if not self.annotations_dir.exists():
+            logging.error(f"Annotations directory does not exist: {self.annotations_dir}")
+            return pd.DataFrame()
+            
+        if not self.tiles_dir.exists():
+            logging.error(f"Tiles directory does not exist: {self.tiles_dir}")
+            return pd.DataFrame()
+            
         particle_annotations = {}
         logging.info("Loading annotations...")
-        for json_file in tqdm(list(self.annotations_dir.glob('*_annotations.json')), desc="Processing annotations"):
+        
+        # Get list of files first with existence check
+        json_files = list(self.annotations_dir.glob('*_annotations.json'))
+        if not json_files:
+            logging.warning(f"No annotation files found in {self.annotations_dir}")
+            
+        for json_file in tqdm(json_files, desc="Processing annotations"):
+            if not json_file.exists():
+                logging.warning(f"Annotation file disappeared: {json_file}")
+                continue
+                
             try:
                 with open(json_file, 'r') as f:
                     annotations = json.load(f)
@@ -144,6 +188,8 @@ class DatasetProcessor:
                             'tissue_type': classification.get('tissue_type'),
                             'inflammation_status': classification.get('inflammation_status')
                         }
+            except json.JSONDecodeError as e:
+                logging.warning(f"Invalid JSON in annotation file {json_file}: {str(e)}")
             except Exception as e:
                 logging.warning(f"Error reading annotation file {json_file}: {str(e)}")
         
@@ -151,7 +197,17 @@ class DatasetProcessor:
         slide_info = {}
         
         logging.info("Counting tiles per particle...")
-        for png_file in tqdm(list(self.tiles_dir.glob('**/*.png')), desc="Processing tiles"):
+        
+        # Make sure tiles directory exists and contains files
+        if not self.tiles_dir.exists():
+            logging.error(f"Tiles directory does not exist: {self.tiles_dir}")
+            return pd.DataFrame()
+            
+        png_files = list(self.tiles_dir.glob('**/*.png'))
+        if not png_files:
+            logging.warning(f"No tile files found in {self.tiles_dir}")
+            
+        for png_file in tqdm(png_files, desc="Processing tiles"):
             filename = png_file.name
             try:
                 parts = filename.split('_')
