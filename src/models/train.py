@@ -623,8 +623,26 @@ def main():
     # Create required directories
     for dir_path in [paths["LOGS_DIR"], paths["MODELS_DIR"]]:
         dir_path.mkdir(parents=True, exist_ok=True)
-    
-    # Set random seeds for reproducibility
+
+    # Setup output directory and logging
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_dir = paths["MODELS_DIR"] / f"{args.task}_{timestamp}"
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    setup_logging(model_dir)
+
+    # Log initial information
+    logging.info(f"Starting training for {args.task} task")
+    logging.info("Command line arguments:")
+    for arg, value in vars(args).items():
+        logging.info(f"  {arg}: {value}")
+
+    # Log paths
+    logging.info("Project paths:")
+    for path_name, path_value in paths.items():
+        logging.info(f"  {path_name}: {path_value}")
+
+    # Set random seeds for reproducibility AFTER logging is configured
     training_utils.set_all_seeds(args.seed)
     
     # If list-models flag is set, show available models and exit

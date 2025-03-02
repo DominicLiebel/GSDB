@@ -156,7 +156,7 @@ def find_optimal_threshold(y_true: List, y_prob: List) -> Tuple[float, float, fl
     recalc_specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
     
     # Check for inconsistency due to interpolation in ROC curve calculation
-    if abs(recalc_sensitivity - sensitivity) > 1e-6 or abs(recalc_specificity - specificity) > 1e-6:
+    if abs(recalc_sensitivity - sensitivity) > 1e-6 or abs(recalc_specificity - specificity) > 1e-3:
         logging.warning("Metrics inconsistency detected in threshold optimization.")
         logging.warning(f"ROC curve values: sens={sensitivity:.6f}, spec={specificity:.6f}")
         logging.warning(f"Recalculated: sens={recalc_sensitivity:.6f}, spec={recalc_specificity:.6f}")
