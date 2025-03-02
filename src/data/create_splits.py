@@ -159,14 +159,14 @@ class DataSplitter:
         train_patients, temp_patients = train_test_split(
             unique_patients, 
             test_size=0.4,  # 60% for training, 40% for val+test
-            random_state=self.seed + 2
+            random_state=self.seed + 2 # + 2 for better balancing between sets, see Master's Thesis for more details
         )
         
         # Split temp into validation and test (50% each of the 40%, resulting in 20% val, 20% test)
         val_patients, test_patients = train_test_split(
             temp_patients,
             test_size=0.5,  # Half of temp goes to test
-            random_state=self.seed + 2
+            random_state=self.seed + 2 # + 2 for better balancing between sets, see Master's Thesis for more details
         )
         
         logging.info(f"\nSplit sizes (Scanner 1 patients):")
