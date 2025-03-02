@@ -484,9 +484,10 @@ def train_model(args, paths):
         )
         
         # Check early stopping
-        if early_stopping and early_stopping(val_metrics['loss']):
-            logging.info(f"Early stopping triggered at epoch {epoch+1}")
-            break
+        if early_stopping:
+            if early_stopping(val_metrics['loss']):
+                logging.info(f"Early stopping triggered at epoch {epoch+1}")
+                break
         
         # Save best model
         if val_metrics['loss'] < best_val_loss:
@@ -622,11 +623,6 @@ def main():
     # Create required directories
     for dir_path in [paths["LOGS_DIR"], paths["MODELS_DIR"]]:
         dir_path.mkdir(parents=True, exist_ok=True)
-        
-    # Initialize logging before setting seeds
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_dir = paths["MODELS_DIR"] / f"{args.task}_{timestamp}"
-    model_dir.mkdir(parents=True, exist_ok=True)
     
     # Set random seeds for reproducibility
     training_utils.set_all_seeds(args.seed)

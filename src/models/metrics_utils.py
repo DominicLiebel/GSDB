@@ -134,11 +134,18 @@ def find_optimal_threshold(y_true: List, y_prob: List) -> Tuple[float, float, fl
     # Calculate the geometric mean of sensitivity and specificity
     gmeans = np.sqrt(tpr * (1-fpr))
     
-    # Find the optimal threshold
-    ix = np.argmax(gmeans)
-    optimal_threshold = thresholds[ix]
-    sensitivity = tpr[ix]
-    specificity = 1-fpr[ix]
+    # Find the optimal threshold with proper error handling
+    if len(gmeans) > 0:
+        ix = np.argmax(gmeans)
+        optimal_threshold = thresholds[ix]
+        sensitivity = tpr[ix]
+        specificity = 1-fpr[ix]
+    else:
+        # Handle the case where gmeans is empty (can happen with edge cases)
+        logging.warning("Empty gmeans array in find_optimal_threshold. Using default threshold of 0.5")
+        optimal_threshold = 0.5
+        sensitivity = 0.0
+        specificity = 0.0
     
     # Ensure numerical consistency by recalculating metrics at the chosen threshold
     predictions = (np.array(y_prob) > optimal_threshold).astype(int)
@@ -226,17 +233,36 @@ def calculate_basic_metrics(
                 metrics['auc'] = 50
             return metrics
     
-    # Calculate metrics as percentages
-    metrics['accuracy'] = 100 * (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
-    metrics['sensitivity'] = 100 * tp / (tp + fn) if (tp + fn) > 0 else 0
-    metrics['specificity'] = 100 * tn / (tn + fp) if (tn + fp) > 0 else 0
-    metrics['precision'] = 100 * tp / (tp + fp) if (tp + fp) > 0 else 0
+    # Calculate metrics as percentages with proper error handling
+    total = tp + tn + fp + fn
+    metrics['accuracy'] = 100 * (tp + tn) / total if total > 0 else 0
     
-    # Calculate F1 score
-    if tp + fp + fn == 0:
+    # Handle division by zero for sensitivity (recall)
+    if tp + fn > 0:
+        metrics['sensitivity'] = 100 * tp / (tp + fn)
+    else:
+        metrics['sensitivity'] = 0 if fn > 0 else 100  # If no positives, max recall is 100%
+    
+    # Handle division by zero for specificity
+    if tn + fp > 0:
+        metrics['specificity'] = 100 * tn / (tn + fp)
+    else:
+        metrics['specificity'] = 0 if fp > 0 else 100  # If no negatives, max specificity is 100%
+    
+    # Handle division by zero for precision
+    if tp + fp > 0:
+        metrics['precision'] = 100 * tp / (tp + fp)
+    else:
+        metrics['precision'] = 0 if fp > 0 else 100  # No predictions as positive
+    
+    # Calculate F1 score with proper handling of edge cases
+    if tp == 0 and (fp == 0 or fn == 0):
+        # Edge case when no true positives and either no false positives or no false negatives
         metrics['f1'] = 0
     else:
-        metrics['f1'] = 100 * (2 * tp) / (2 * tp + fp + fn)
+        # Standard F1 calculation with denominator check
+        denominator = 2 * tp + fp + fn
+        metrics['f1'] = 100 * (2 * tp) / denominator if denominator > 0 else 0
     
     # Calculate AUC if raw predictions are provided
     if raw_preds is not None:
@@ -277,10 +303,11 @@ def calculate_hierarchical_metrics(
     # ALWAYS calculate tile-level metrics for both tasks
     tile_preds = (df['raw_pred'] > threshold).astype(int)
     
-    # For ROC-AUC, convert to probabilities if we have logits
-    if threshold == 0.0:  # If we're using logits
+    # For ROC-AUC, convert to probabilities if we have logits (negative values)
+    # Check minimum value as indicator of logits vs probabilities
+    if df['raw_pred'].min() < 0:  # More reliable indicator of logits
         scores = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
-    else:  # If we already have probabilities
+    else:  # Already have probabilities
         scores = df['raw_pred'].values
     
     tile_metrics = calculate_metrics(
@@ -299,7 +326,8 @@ def calculate_hierarchical_metrics(
         })
         
         slide_preds = (slide_df['raw_pred'] > threshold).astype(int)
-        if threshold == 0.0:
+        # Check if we have logits (negative values)
+        if slide_df['raw_pred'].min() < 0:
             slide_scores = torch.sigmoid(torch.tensor(slide_df['raw_pred'].values)).numpy()
         else:
             slide_scores = slide_df['raw_pred'].values
@@ -320,7 +348,8 @@ def calculate_hierarchical_metrics(
         })
         
         particle_preds = (particle_df['raw_pred'] > threshold).astype(int)
-        if threshold == 0.0:
+        # Check if we have logits (negative values)
+        if particle_df['raw_pred'].min() < 0:
             particle_scores = torch.sigmoid(torch.tensor(particle_df['raw_pred'].values)).numpy()
         else:
             particle_scores = particle_df['raw_pred'].values
@@ -420,7 +449,8 @@ def optimize_hierarchical_thresholds(df: pd.DataFrame, task: str = 'inflammation
         # Calculate metrics at this threshold
         slide_preds = (slide_probs > opt_threshold).astype(int)
         tn, fp, fn, tp = confusion_matrix(slide_df['label'].values, slide_preds).ravel()
-        accuracy = (tp + tn) / (tp + tn + fp + fn)
+        total = tp + tn + fp + fn
+        accuracy = (tp + tn) / total if total > 0 else 0
         f1 = f1_score(slide_df['label'].values, slide_preds, zero_division=0)
         
         results['slide'] = {
@@ -462,7 +492,8 @@ def optimize_hierarchical_thresholds(df: pd.DataFrame, task: str = 'inflammation
         # Calculate metrics at this threshold
         particle_preds = (particle_probs > opt_threshold).astype(int)
         tn, fp, fn, tp = confusion_matrix(particle_df['label'].values, particle_preds).ravel()
-        accuracy = (tp + tn) / (tp + tn + fp + fn)
+        total = tp + tn + fp + fn
+        accuracy = (tp + tn) / total if total > 0 else 0
         f1 = f1_score(particle_df['label'].values, particle_preds, zero_division=0)
         
         results['particle'] = {
@@ -545,8 +576,9 @@ def optimize_aggregation_strategy(df: pd.DataFrame, task: str = 'inflammation',
             slide_preds = (slide_agg_df['prob'] > opt_threshold).astype(int)
             tn, fp, fn, tp = confusion_matrix(slide_agg_df['label'].values, slide_preds).ravel()
             
-            # FIX: Calculate accuracy directly from confusion matrix
-            accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
+            # Calculate accuracy directly from confusion matrix with proper error handling
+            total = tp + tn + fp + fn
+            accuracy = (tp + tn) / total if total > 0 else 0
             
             # Use scikit-learn for F1 to handle edge cases
             f1 = f1_score(slide_agg_df['label'].values, slide_preds, zero_division=0)
@@ -583,8 +615,9 @@ def optimize_aggregation_strategy(df: pd.DataFrame, task: str = 'inflammation',
             particle_preds = (particle_agg_df['prob'] > opt_threshold).astype(int)
             tn, fp, fn, tp = confusion_matrix(particle_agg_df['label'].values, particle_preds).ravel()
             
-            # FIX: Calculate accuracy directly from confusion matrix
-            accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
+            # Calculate accuracy directly from confusion matrix with proper error handling
+            total = tp + tn + fp + fn
+            accuracy = (tp + tn) / total if total > 0 else 0
             
             # Use scikit-learn for F1 to handle edge cases
             f1 = f1_score(particle_agg_df['label'].values, particle_preds, zero_division=0)
@@ -842,10 +875,15 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path) -> None:
         }).reset_index()
         
         # Convert to probabilities if needed
-        if 'raw_pred' in slide_df.columns and (slide_df['raw_pred'].min() < 0 or slide_df['raw_pred'].max() > 1):
-            slide_probs = torch.sigmoid(torch.tensor(slide_df['raw_pred'].values)).numpy()
+        if 'raw_pred' in slide_df.columns and len(slide_df) > 0:
+            # Check if we have logits (negative values)
+            if slide_df['raw_pred'].min() < 0:
+                slide_probs = torch.sigmoid(torch.tensor(slide_df['raw_pred'].values)).numpy()
+            else:
+                slide_probs = slide_df['raw_pred'].values
         else:
-            slide_probs = slide_df['raw_pred'].values
+            # Handle case with empty dataframe
+            slide_probs = np.array([])
         
         # Calculate ROC
         slide_fpr, slide_tpr, _ = roc_curve(slide_df['label'], slide_probs)
@@ -864,10 +902,15 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path) -> None:
         }).reset_index()
         
         # Convert to probabilities if needed
-        if 'raw_pred' in particle_df.columns and (particle_df['raw_pred'].min() < 0 or particle_df['raw_pred'].max() > 1):
-            particle_probs = torch.sigmoid(torch.tensor(particle_df['raw_pred'].values)).numpy()
+        if 'raw_pred' in particle_df.columns and len(particle_df) > 0:
+            # Check if we have logits (negative values)
+            if particle_df['raw_pred'].min() < 0:
+                particle_probs = torch.sigmoid(torch.tensor(particle_df['raw_pred'].values)).numpy()
+            else:
+                particle_probs = particle_df['raw_pred'].values
         else:
-            particle_probs = particle_df['raw_pred'].values
+            # Handle case with empty dataframe
+            particle_probs = np.array([])
         
         # Calculate ROC
         particle_fpr, particle_tpr, _ = roc_curve(particle_df['label'], particle_probs)

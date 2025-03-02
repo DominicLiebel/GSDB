@@ -246,13 +246,13 @@ def create_dataloaders(args, batch_size: int) -> Tuple[DataLoader, DataLoader]:
     """
     train_dataset = HistologyDataset(
         split='train',
-        transform=get_transforms(args.task, is_training=True),
+        transform=get_transforms(is_training=True),
         task=args.task
     )
     
     val_dataset = HistologyDataset(
         split='val',
-        transform=get_transforms(args.task, is_training=False),
+        transform=get_transforms(is_training=False),
         task=args.task
     )
     
@@ -673,13 +673,13 @@ def train_final_model(trial: optuna.trial.FrozenTrial, args: argparse.Namespace,
     # Create datasets and dataloaders
     train_dataset = HistologyDataset(
         split='train',
-        transform=get_transforms(args.task, is_training=True),
+        transform=get_transforms(is_training=True),
         task=args.task
     )
     
     val_dataset = HistologyDataset(
         split='val',
-        transform=get_transforms(args.task, is_training=False),
+        transform=get_transforms(is_training=False),
         task=args.task
     )
     
