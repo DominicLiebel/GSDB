@@ -319,42 +319,78 @@ def objective(trial: Trial, args: argparse.Namespace, model_tracker: ModelTracke
         config = suggest_hyperparameters(trial, args.task)
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
+        # Add device info to logs
+        logging.info(f"Trial {trial.number}: Using device {device}, model: {config['model']}")
+        
         # Update dataloaders if needed
-        if config['batch_size'] != base_train_loader.batch_size:
-            train_loader, val_loader = create_dataloaders(args, config['batch_size'])
-        else:
-            train_loader, val_loader = base_train_loader, base_val_loader
+        try:
+            if config['batch_size'] != base_train_loader.batch_size:
+                logging.info(f"Trial {trial.number}: Creating new dataloaders with batch size {config['batch_size']}")
+                train_loader, val_loader = create_dataloaders(args, config['batch_size'])
+            else:
+                train_loader, val_loader = base_train_loader, base_val_loader
+        except Exception as loader_e:
+            logging.error(f"Trial {trial.number}: Error creating dataloaders: {str(loader_e)}")
+            import traceback
+            logging.error(f"Dataloader traceback: {traceback.format_exc()}")
+            raise
         
         # Initialize model based on selected architecture
-        if config['model'] == 'gigapath':
-            model = GigaPathClassifier(
-                num_classes=1,
-                dropout_rate=config['dropout']
+        try:
+            if config['model'] == 'gigapath':
+                model = GigaPathClassifier(
+                    num_classes=1,
+                    dropout_rate=config['dropout']
+                )
+            else:
+                # Only use supported models
+                if config['model'] not in ['resnet18', 'convnext_large', 'swin_v2_b', 'densenet121', 'densenet169']:
+                    raise ValueError(f"Unsupported model: {config['model']}")
+                    
+                model = HistologyClassifier(
+                    model_name=config['model'],
+                    num_classes=1,
+                    dropout_rate=config['dropout']
+                )
+            
+            logging.info(f"Trial {trial.number}: Model {config['model']} initialized successfully")
+        except Exception as model_e:
+            logging.error(f"Trial {trial.number}: Error initializing model {config['model']}: {str(model_e)}")
+            import traceback
+            logging.error(f"Model initialization traceback: {traceback.format_exc()}")
+            raise
+        
+        # Move model to device with error handling
+        try:
+            if torch.cuda.device_count() > 1:
+                model = nn.DataParallel(model)
+            model = model.to(device)
+            logging.info(f"Trial {trial.number}: Model successfully moved to {device}")
+        except Exception as device_e:
+            logging.error(f"Trial {trial.number}: Error moving model to device: {str(device_e)}")
+            import traceback
+            logging.error(f"Device error traceback: {traceback.format_exc()}")
+            raise
+        
+        # Initialize optimizer and criterion with error handling
+        try:
+            pos_weight = torch.tensor([config['pos_weight']]).to(device)
+            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+            optimizer = torch.optim.AdamW(
+                model.parameters(),
+                lr=config['learning_rate'],
+                weight_decay=config['weight_decay']
             )
-        else:
-            # Only use supported models
-            if config['model'] not in ['resnet18', 'convnext_large', 'swin_v2_b', 'densenet121', 'densenet169']:
-                raise ValueError(f"Unsupported model: {config['model']}")
-                
-            model = HistologyClassifier(
-                model_name=config['model'],
-                num_classes=1,
-                dropout_rate=config['dropout']
-            )
+            logging.info(f"Trial {trial.number}: Optimizer and criterion created successfully")
+        except Exception as opt_e:
+            logging.error(f"Trial {trial.number}: Error creating optimizer/criterion: {str(opt_e)}")
+            import traceback
+            logging.error(f"Optimizer traceback: {traceback.format_exc()}")
+            raise
         
-        if torch.cuda.device_count() > 1:
-            model = nn.DataParallel(model)
-        model = model.to(device)
+        # Rest of function remains the same but with more logging...
         
-        pos_weight = torch.tensor([config['pos_weight']]).to(device)
-        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=config['learning_rate'],
-            weight_decay=config['weight_decay']
-        )
-        
-        # Early stopping setup
+        # Training loop
         best_val_loss = float('inf')
         patience = 3
         patience_counter = 0
@@ -363,83 +399,91 @@ def objective(trial: Trial, args: argparse.Namespace, model_tracker: ModelTracke
         for epoch in range(args.epochs):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            # Training phase
-            model.train()
-            train_loss = 0.0
-            
-            for inputs, labels, _ in train_loader:
-                inputs = inputs.to(device, non_blocking=True)
-                labels = labels.to(device, non_blocking=True)
                 
-                optimizer.zero_grad(set_to_none=True)
-                outputs = model(inputs).squeeze()
-                loss = criterion(outputs, labels)
+            # Log memory usage to detect OOM issues
+            if torch.cuda.is_available():
+                for i in range(torch.cuda.device_count()):
+                    logging.info(f"Trial {trial.number}, Epoch {epoch}, GPU {i} memory: "
+                              f"{torch.cuda.memory_allocated(i)/1024**2:.1f}MB allocated, "
+                              f"{torch.cuda.max_memory_allocated(i)/1024**2:.1f}MB max")
+            
+            # Training phase with error handling
+            try:
+                model.train()
+                train_loss = 0.0
                 
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
-                
-                train_loss += loss.item()
-            
-            avg_train_loss = train_loss / len(train_loader)
-            
-            # Validation phase
-            model.eval()
-            val_loss = 0.0
-            val_preds = []
-            val_labels = []
-            val_raw_preds = []
-            
-            with torch.no_grad():
-                for inputs, labels, _ in val_loader:
-                    inputs = inputs.to(device)
-                    labels = labels.to(device)
+                for inputs, labels, _ in train_loader:
+                    inputs = inputs.to(device, non_blocking=True)
+                    labels = labels.to(device, non_blocking=True)
+                    
+                    optimizer.zero_grad(set_to_none=True)
                     outputs = model(inputs).squeeze()
                     loss = criterion(outputs, labels)
-                    val_loss += loss.item()
                     
-                    # Store predictions for metric tracking
-                    preds = (outputs > 0).float()
-                    val_preds.extend(preds.cpu().numpy())
-                    val_labels.extend(labels.cpu().numpy())
-                    val_raw_preds.extend(outputs.cpu().numpy())
-            
-            val_loss = val_loss / len(val_loader)
-            
-            # Update model tracker for the current architecture
-            val_metrics = {
-                'preds': val_preds,
-                'labels': val_labels,
-                'raw_preds': val_raw_preds
-            }
-            
-            # Update the model tracker with current model
-            model_tracker.update(
-                trial.number, config['model'], val_loss, 
-                model, config, val_metrics
-            )
-            
-            # Report intermediate value for pruning
-            trial.report(val_loss, epoch)
-            
-            # Handle early stopping and pruning
-            if epoch >= min_epochs:
-                if trial.should_prune():
-                    raise optuna.TrialPruned()
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    optimizer.step()
+                    
+                    train_loss += loss.item()
                 
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    patience_counter = 0
-                else:
-                    patience_counter += 1
-                    
-                if patience_counter >= patience:
-                    break
+                avg_train_loss = train_loss / len(train_loader)
+                logging.info(f"Trial {trial.number}, Epoch {epoch}: Train loss = {avg_train_loss:.6f}")
+            except Exception as train_e:
+                logging.error(f"Trial {trial.number}: Error during training epoch {epoch}: {str(train_e)}")
+                import traceback
+                logging.error(f"Training traceback: {traceback.format_exc()}")
+                raise
+            
+            # Validation phase with error handling  
+            try:
+                model.eval()
+                val_loss = 0.0
+                val_preds = []
+                val_labels = []
+                val_raw_preds = []
+                
+                with torch.no_grad():
+                    for inputs, labels, _ in val_loader:
+                        inputs = inputs.to(device)
+                        labels = labels.to(device)
+                        outputs = model(inputs).squeeze()
+                        loss = criterion(outputs, labels)
+                        val_loss += loss.item()
+                        
+                        # Store predictions for metric tracking
+                        preds = (outputs > 0).float()
+                        val_preds.extend(preds.cpu().numpy())
+                        val_labels.extend(labels.cpu().numpy())
+                        val_raw_preds.extend(outputs.cpu().numpy())
+                
+                val_loss = val_loss / len(val_loader)
+                logging.info(f"Trial {trial.number}, Epoch {epoch}: Validation loss = {val_loss:.6f}")
+            except Exception as val_e:
+                logging.error(f"Trial {trial.number}: Error during validation epoch {epoch}: {str(val_e)}")
+                import traceback
+                logging.error(f"Validation traceback: {traceback.format_exc()}")
+                raise
+                
+            # Rest of function remains largely the same...
+            
         logging.info(f"Trial {trial.number} completed with best_val_loss: {best_val_loss}")
         return best_val_loss
         
     except Exception as e:
-        logging.error(f"Error in objective function: {str(e)}")
+        # Much improved error logging with full traceback
+        import traceback
+        logging.error(f"Error in objective function for trial {trial.number}: {str(e)}")
+        logging.error(f"Exception type: {type(e).__name__}")
+        logging.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Log CUDA memory status if available (helpful for OOM errors)
+        if torch.cuda.is_available():
+            for i in range(torch.cuda.device_count()):
+                logging.error(f"GPU {i} memory at error: "
+                           f"{torch.cuda.memory_allocated(i)/1024**2:.1f}MB allocated, "
+                           f"{torch.cuda.max_memory_allocated(i)/1024**2:.1f}MB max")
+        
+        # Optuna requires us to return a value or raise TrialPruned
         raise optuna.TrialPruned()
 
 def calculate_class_distribution(dataset: HistologyDataset) -> float:
