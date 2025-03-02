@@ -128,6 +128,11 @@ def find_optimal_threshold(y_true: List, y_prob: List) -> Tuple[float, float, fl
     Returns:
         Tuple containing (optimal_threshold, sensitivity, specificity)
     """
+    # Check for empty inputs or only one class
+    if len(y_true) == 0 or len(np.unique(y_true)) <= 1:
+        logging.warning("find_optimal_threshold: Empty input or only one class present. Using default threshold of 0.5")
+        return 0.5, 0.0, 0.0
+        
     # Get false positive rate, true positive rate and thresholds
     fpr, tpr, thresholds = roc_curve(y_true, y_prob)
     
@@ -138,8 +143,24 @@ def find_optimal_threshold(y_true: List, y_prob: List) -> Tuple[float, float, fl
     if len(gmeans) > 0:
         ix = np.argmax(gmeans)
         optimal_threshold = thresholds[ix]
-        sensitivity = tpr[ix]
-        specificity = 1-fpr[ix]
+        
+        # Directly compute metrics using the chosen threshold
+        predictions = (np.array(y_prob) > optimal_threshold).astype(int)
+        tn, fp, fn, tp = confusion_matrix(y_true, predictions).ravel()
+        
+        # Calculate sensitivity and specificity directly
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+        
+        # For logging purposes
+        roc_sensitivity = tpr[ix] 
+        roc_specificity = 1-fpr[ix]
+        
+        # Check for inconsistency due to interpolation in ROC curve calculation
+        if abs(roc_sensitivity - sensitivity) > 1e-6 or abs(roc_specificity - specificity) > 1e-3:
+            logging.warning("Metrics inconsistency detected in threshold optimization.")
+            logging.warning(f"ROC curve values: sens={roc_sensitivity:.6f}, spec={roc_specificity:.6f}")
+            logging.warning(f"Recalculated: sens={sensitivity:.6f}, spec={specificity:.6f}")
     else:
         # Handle the case where gmeans is empty (can happen with edge cases)
         logging.warning("Empty gmeans array in find_optimal_threshold. Using default threshold of 0.5")
@@ -147,24 +168,24 @@ def find_optimal_threshold(y_true: List, y_prob: List) -> Tuple[float, float, fl
         sensitivity = 0.0
         specificity = 0.0
     
-    # Ensure numerical consistency by recalculating metrics at the chosen threshold
-    predictions = (np.array(y_prob) > optimal_threshold).astype(int)
-    tn, fp, fn, tp = confusion_matrix(y_true, predictions).ravel()
-    
-    # Recalculate sensitivity and specificity
-    recalc_sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
-    recalc_specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-    
-    # Check for inconsistency due to interpolation in ROC curve calculation
-    if abs(recalc_sensitivity - sensitivity) > 1e-6 or abs(recalc_specificity - specificity) > 1e-3:
-        logging.warning("Metrics inconsistency detected in threshold optimization.")
-        logging.warning(f"ROC curve values: sens={sensitivity:.6f}, spec={specificity:.6f}")
-        logging.warning(f"Recalculated: sens={recalc_sensitivity:.6f}, spec={recalc_specificity:.6f}")
+    # Enforce threshold bounds (0.1 to 0.9) to avoid extreme values that might overfit
+    if optimal_threshold < 0.1:
+        logging.warning(f"Threshold too low ({optimal_threshold:.4f}), adjusting to 0.1")
+        optimal_threshold = 0.1
+        # Recalculate metrics with the new threshold
+        predictions = (np.array(y_prob) > optimal_threshold).astype(int)
+        tn, fp, fn, tp = confusion_matrix(y_true, predictions).ravel()
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+    elif optimal_threshold > 0.9:
+        logging.warning(f"Threshold too high ({optimal_threshold:.4f}), adjusting to 0.9")
+        optimal_threshold = 0.9
+        # Recalculate metrics with the new threshold
+        predictions = (np.array(y_prob) > optimal_threshold).astype(int)
+        tn, fp, fn, tp = confusion_matrix(y_true, predictions).ravel()
+        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
         
-        # Use the recalculated values for consistency
-        sensitivity = recalc_sensitivity
-        specificity = recalc_specificity
-    
     return optimal_threshold, sensitivity, specificity
 
 def calculate_basic_metrics(
@@ -533,22 +554,32 @@ def optimize_aggregation_strategy(df: pd.DataFrame, task: str = 'inflammation',
     """
     import torch
     
-    # Convert logits to probabilities if needed
-    if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
-        df['prob'] = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
-    else:
-        df['prob'] = df['raw_pred'].values if 'raw_pred' in df.columns else df['prob']
+    # Carefully convert logits to probabilities if needed and cache it to ensure
+    # consistency in probability calculation across all aggregation strategies
+    if 'prob' not in df.columns:
+        if 'raw_pred' in df.columns:
+            if df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1:
+                logging.info("Converting raw logits to probabilities with sigmoid in optimize_aggregation_strategy")
+                df['prob'] = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
+            else:
+                logging.info("Raw predictions are already in probability range [0,1]")
+                df['prob'] = df['raw_pred'].copy()
+        else:
+            logging.warning("No raw_pred column found in dataframe for optimize_aggregation_strategy")
+            df['prob'] = 0.5  # Default fallback
     
     # Define aggregation strategies to test
     aggregation_strategies = {
         'mean': lambda x: np.mean(x),
         'median': lambda x: np.median(x),
-        'max': lambda x: np.max(x),
-        'min': lambda x: np.min(x),
-        'percentile_75': lambda x: np.percentile(x, 75),
-        'percentile_90': lambda x: np.percentile(x, 90),
+        # Remove strategies that use a single tile (too specific)
+        #'max': lambda x: np.max(x),
+        #'min': lambda x: np.min(x),
+        #'percentile_75': lambda x: np.percentile(x, 75),
+        #'percentile_90': lambda x: np.percentile(x, 90),
         'top_k_mean_10': lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.1)):]) if len(x) > 0 else 0,
         'top_k_mean_20': lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.2)):]) if len(x) > 0 else 0,
+        'top_k_mean_30': lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.3)):]) if len(x) > 0 else 0,
         'filter_90_mean': lambda x: np.mean(np.sort(x)[int(len(x)*0.9):]) if len(x) > 0 else 0,  # Filter bottom 90%, mean of top 10%
         'filter_80_mean': lambda x: np.mean(np.sort(x)[int(len(x)*0.8):]) if len(x) > 0 else 0,  # Filter bottom 80%, mean of top 20%
         'filter_70_mean': lambda x: np.mean(np.sort(x)[int(len(x)*0.7):]) if len(x) > 0 else 0,  # Filter bottom 70%, mean of top 30%
@@ -636,14 +667,15 @@ def optimize_aggregation_strategy(df: pd.DataFrame, task: str = 'inflammation',
                 'fn': int(fn)
             }
     
-    # Find the best strategy based on F1 score
-    best_strategy = max(results.items(), key=lambda x: x[1]['f1'])
+    # Find the best strategy based on balanced accuracy instead of F1 score
+    # This is more suitable for class imbalance and helps avoid overfitting to the majority class
+    best_strategy = max(results.items(), key=lambda x: x[1]['balanced_acc'])
     
     # Log detailed information about all strategies
     logging.info("\nAggregation Strategy Comparison:")
     logging.info("--------------------------------")
-    # Sort strategies by F1 score in descending order
-    sorted_strategies = sorted(results.items(), key=lambda x: x[1]['f1'], reverse=True)
+    # Sort strategies by balanced accuracy in descending order
+    sorted_strategies = sorted(results.items(), key=lambda x: x[1]['balanced_acc'], reverse=True)
     
     for strategy_name, metrics in sorted_strategies:
         logging.info(f"{strategy_name}:")
@@ -1049,7 +1081,7 @@ def calculate_validation_thresholds(model_path: Optional[Path] = None, model: Op
                 }
                 
                 if task == 'inflammation':
-                    pred_dict['inflammation_type'] = metadata.get('inflammation_type', 'unknown')
+                    pred_dict['inflammation_type'] = metadata.get('inflammation_status', 'unknown')
                 
                 predictions.append(pred_dict)
     

@@ -142,7 +142,7 @@ def get_class_names(task: str, df: pd.DataFrame = None) -> Tuple[str, str]:
     """
     if task == 'inflammation':
         positive_class = "Inflamed"
-        negative_class = "Non-inflamed"
+        negative_class = "Noninflamed"
         
         # Try to detect actual labels if dataframe is provided
         if df is not None and 'inflammation_type' in df.columns:

@@ -97,7 +97,8 @@ def evaluate_model(
                 
                 # Add task field to support task detection
                 if task == 'inflammation':
-                    pred_dict['inflammation_type'] = metadata.get('inflammation_type', 'unknown')
+                    # Use inflammation_status from metadata, which is the correct field name in the dataset
+                    pred_dict['inflammation_type'] = metadata.get('inflammation_status', 'unknown')
                 
                 predictions.append(pred_dict)
     
@@ -194,6 +195,8 @@ def evaluate_model(
             agg_func = lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.1)):]) if len(x) > 0 else 0
         elif best_strategy == 'top_k_mean_20':
             agg_func = lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.2)):]) if len(x) > 0 else 0
+        elif best_strategy == 'top_k_mean_30':
+            agg_func = lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.3)):]) if len(x) > 0 else 0
         elif best_strategy == 'filter_90_mean':
             agg_func = lambda x: np.mean(np.sort(x)[int(len(x)*0.9):]) if len(x) > 0 else 0
         elif best_strategy == 'filter_80_mean':
@@ -212,11 +215,19 @@ def evaluate_model(
         elif 'filter_70_mean' in best_strategy:
             logging.info("Strategy description: Filter out 70% of tiles with lowest activation, compute mean of top 30%")
         
-        # Calculate probabilities from logits if needed
-        if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
-            df['prob'] = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
-        elif 'raw_pred' in df.columns and 'prob' not in df.columns:
-            df['prob'] = df['raw_pred']
+        # Calculate probabilities from logits if needed and cache it
+        # This ensures consistent probability calculation across all aggregation strategies
+        if 'prob' not in df.columns:
+            if 'raw_pred' in df.columns:
+                if df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1:
+                    logging.info("Converting raw logits to probabilities with sigmoid...")
+                    df['prob'] = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
+                else:
+                    logging.info("Raw predictions are already in probability range [0,1]")
+                    df['prob'] = df['raw_pred']
+            else:
+                logging.warning("No raw_pred column found in dataframe")
+                df['prob'] = 0.5  # Default fallback
         
         if task == 'inflammation':
             slide_df = df.groupby('slide_name').agg({
