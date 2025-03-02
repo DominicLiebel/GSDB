@@ -292,7 +292,6 @@ tissue:
         random_affine:
           enabled: false                # Not mentioned for tissue
 
-  # Other models remain unchanged
   gigapath:
     architecture:
       name: gigapath

@@ -15,7 +15,7 @@ import seaborn as sns
 
 def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame, str]:
     """
-    Load results for a specific model.
+    Load results for a specific model with improved error handling.
     
     Args:
         results_dir: Base directory containing model results
@@ -26,12 +26,25 @@ def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame,
     """
     model_dir = results_dir / model_name
     
+    # Validate directory exists
+    if not model_dir.exists() or not model_dir.is_dir():
+        raise FileNotFoundError(f"Model directory not found: {model_dir}")
+    
     # Load predictions
     pred_path = model_dir / 'predictions.csv'
     if not pred_path.exists():
         raise FileNotFoundError(f"Predictions file not found: {pred_path}")
     
-    df = pd.read_csv(pred_path)
+    try:
+        df = pd.read_csv(pred_path)
+    except Exception as e:
+        raise ValueError(f"Error reading predictions file: {e}")
+    
+    # Validate required columns
+    required_cols = ['raw_pred', 'label', 'slide_name']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        raise ValueError(f"Predictions file missing required columns: {missing_cols}")
     
     # Determine task from stats file
     stats_path = model_dir / 'statistics.json'
@@ -41,11 +54,27 @@ def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame,
             task = 'tissue'
         else:
             task = 'inflammation'
+        print(f"Warning: statistics.json not found for {model_name}. Inferred task: {task}")
     else:
-        with open(stats_path, 'r') as f:
-            stats = json.load(f)
-        task = stats.get('task', 'unknown')
-        
+        try:
+            with open(stats_path, 'r') as f:
+                stats = json.load(f)
+            task = stats.get('task', 'unknown')
+            if task == 'unknown':
+                # Fallback to inference from columns
+                if 'particle_id' in df.columns:
+                    task = 'tissue'
+                else:
+                    task = 'inflammation'
+                print(f"Warning: task not specified in statistics.json for {model_name}. Inferred task: {task}")
+        except Exception as e:
+            # Fallback to inference from columns
+            if 'particle_id' in df.columns:
+                task = 'tissue'
+            else:
+                task = 'inflammation'
+            print(f"Warning: Error reading statistics.json for {model_name}: {e}. Inferred task: {task}")
+    
     return df, task
 
 def calculate_roc_data(df: pd.DataFrame, task: str, level: str) -> Tuple[np.ndarray, np.ndarray, float]:

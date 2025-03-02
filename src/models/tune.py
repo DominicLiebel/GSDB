@@ -26,6 +26,7 @@ import argparse
 import logging
 import json
 import copy
+import random
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Any, Union, List, Tuple
@@ -56,7 +57,7 @@ from dataset import HistologyDataset
 import src.models.metrics_utils as metrics_utils
 from src.models.model_utils import load_model, get_transforms
 import training_utils
-from train import get_transforms
+from src.models.architectures import GigaPathClassifier, HistologyClassifier
 
 # Import project paths from config module
 from src.config.paths import get_project_paths
@@ -103,9 +104,6 @@ def setup_logging(args):
     
     logging.info(f"Log file created at: {log_file}")
     return log_file
-
-# Import shared model architectures from the dedicated module
-from src.models.architectures import GigaPathClassifier, HistologyClassifier
 
 
 class ModelTracker:
@@ -207,6 +205,8 @@ def parse_args():
     parser.add_argument('--n-trials', type=int, default=200)
     parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--final-epochs', type=int, default=50)
+    parser.add_argument('--patience', type=int, default=3,
+                       help='Early stopping patience (epochs without improvement)')
     parser.add_argument('--study-name', type=str, required=True)
     parser.add_argument('--base-dir', type=Path,
                        default=BASE_DIR,
@@ -216,7 +216,23 @@ def parse_args():
                        help='Directory to save results')
     parser.add_argument('--timeout', type=int, help='Optimization timeout in hours')
     parser.add_argument('--gpus', type=str, help='Comma-separated GPU indices (e.g., "0,1")')
+    parser.add_argument('--n-jobs', type=int, default=1,
+                       help='Number of parallel trials (1 for better stability with multi-GPU)')
+    parser.add_argument('--seed', type=int, default=42,
+                       help='Random seed for reproducibility')
     return parser.parse_args()
+
+def set_seed(seed):
+    """Set random seed for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    # Ensure deterministic behavior in CuDNN
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 def create_dataloaders(args, batch_size: int) -> Tuple[DataLoader, DataLoader]:
     """Create train and validation dataloaders.
@@ -259,8 +275,17 @@ def create_dataloaders(args, batch_size: int) -> Tuple[DataLoader, DataLoader]:
     
     return train_loader, val_loader
 
-def suggest_hyperparameters(trial: Trial, task: str) -> Dict:
-    """Suggest hyperparameters with focused model selection and efficient ranges."""
+def suggest_hyperparameters(trial: Trial, task: str, suggested_pos_weight: float) -> Dict:
+    """Suggest hyperparameters with focused model selection and efficient ranges.
+    
+    Args:
+        trial: Optuna trial
+        task: Classification task
+        suggested_pos_weight: Suggested weight based on class distribution
+        
+    Returns:
+        Dict of hyperparameters
+    """
     model = trial.suggest_categorical('model', [
         'resnet18',        # Baseline model for comparison
         'swin_v2_b',       # Modern vision transformer
@@ -298,10 +323,10 @@ def suggest_hyperparameters(trial: Trial, task: str) -> Dict:
     dropout = trial.suggest_float('dropout', 0.0, 0.3)
     
     # Task-specific pos_weight based on class distribution
-    if task == 'inflammation':
-        pos_weight = trial.suggest_float('pos_weight', 0.45, 0.65) # Centered around the theoretical optimum of 0.581
-    else:  # tissue task
-        pos_weight = trial.suggest_float('pos_weight', 0.65, 0.85) # Centered around the theoretical optimum of 0.745
+    # Use the suggested pos_weight as the center of the search range
+    pos_weight_min = max(0.1, suggested_pos_weight - 0.15)
+    pos_weight_max = min(0.9, suggested_pos_weight + 0.15)
+    pos_weight = trial.suggest_float('pos_weight', pos_weight_min, pos_weight_max)
     
     return {
         'model': model,
@@ -313,10 +338,27 @@ def suggest_hyperparameters(trial: Trial, task: str) -> Dict:
     }
 
 def objective(trial: Trial, args: argparse.Namespace, model_tracker: ModelTracker,
-            base_train_loader: DataLoader, base_val_loader: DataLoader) -> float:
-    """Optimized objective function with early pruning."""
+            base_train_loader: DataLoader, base_val_loader: DataLoader,
+            suggested_pos_weight: float) -> float:
+    """Optimized objective function with early pruning.
+    
+    Args:
+        trial: Optuna trial
+        args: Command line arguments
+        model_tracker: Tracks best models for each architecture
+        base_train_loader: Base train dataloader
+        base_val_loader: Base validation dataloader
+        suggested_pos_weight: Suggested pos_weight based on class distribution
+        
+    Returns:
+        Validation loss
+    """
+    # Clear memory at the start of each trial
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        
     try:
-        config = suggest_hyperparameters(trial, args.task)
+        config = suggest_hyperparameters(trial, args.task, suggested_pos_weight)
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         # Add device info to logs
@@ -388,11 +430,8 @@ def objective(trial: Trial, args: argparse.Namespace, model_tracker: ModelTracke
             logging.error(f"Optimizer traceback: {traceback.format_exc()}")
             raise
         
-        # Rest of function remains the same but with more logging...
-        
         # Training loop
         best_val_loss = float('inf')
-        patience = 3
         patience_counter = 0
         min_epochs = 5  # Minimum epochs before pruning
         
@@ -455,16 +494,51 @@ def objective(trial: Trial, args: argparse.Namespace, model_tracker: ModelTracke
                         val_preds.extend(preds.cpu().numpy())
                         val_labels.extend(labels.cpu().numpy())
                         val_raw_preds.extend(outputs.cpu().numpy())
-                
+                                
+                # Calculate average validation loss
                 val_loss = val_loss / len(val_loader)
                 logging.info(f"Trial {trial.number}, Epoch {epoch}: Validation loss = {val_loss:.6f}")
+
+                # Create metrics dict for model tracker
+                val_metrics = {
+                    'preds': val_preds,
+                    'labels': val_labels,
+                    'raw_preds': val_raw_preds
+                }
+
+                # Update model tracker with normalized loss
+                model_tracker.update(
+                    trial.number, 
+                    config['model'], 
+                    val_loss,
+                    model, 
+                    config, 
+                    val_metrics
+                )
+
+                # Report to Optuna ONCE
+                trial.report(val_loss, epoch)
+
+                # Update best_val_loss logic with the properly normalized loss
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
+
+                # Handle pruning and early stopping separately
+                if epoch >= min_epochs:
+                    if trial.should_prune():
+                        raise optuna.TrialPruned()
+                        
+                    if patience_counter >= args.patience:
+                        break
+
             except Exception as val_e:
                 logging.error(f"Trial {trial.number}: Error during validation epoch {epoch}: {str(val_e)}")
                 import traceback
                 logging.error(f"Validation traceback: {traceback.format_exc()}")
                 raise
-                
-            # Rest of function remains largely the same...
             
         logging.info(f"Trial {trial.number} completed with best_val_loss: {best_val_loss}")
         return best_val_loss
@@ -749,11 +823,11 @@ def plot_training_history(history: Dict, save_dir: Path) -> None:
     plt.grid(True)
     plt.savefig(save_dir / 'loss_history.png')
     plt.close()
-    
+
     # Accuracy plot
     plt.figure(figsize=(10, 6))
-    plt.plot(history['train_acc'], label='Train Accuracy')
-    plt.plot(history['val_acc'], label='Validation Accuracy')
+    plt.plot(history['train_accuracy'], label='Train Accuracy')
+    plt.plot(history['val_accuracy'], label='Validation Accuracy')
     plt.plot(history['val_f1'], label='Validation F1')
     plt.plot(history['val_auc'], label='Validation AUC')
     plt.title('Training and Validation Metrics')
@@ -766,6 +840,10 @@ def plot_training_history(history: Dict, save_dir: Path) -> None:
 
 def main():
     args = parse_args()
+    
+    # Set random seed for reproducibility
+    set_seed(args.seed)
+    logging.info(f"Random seed set to {args.seed}")
 
     # Update base directory if provided
     global BASE_DIR, CONFIG_DIR, RESULTS_DIR, LOG_DIR, MODEL_DIR, TUNING_DIR
@@ -794,22 +872,12 @@ def main():
         task=args.task
     )
     
-    # Calculate class distribution and suggested pos_weight
-    train_dataset = HistologyDataset(
-        split='train',
-        transform=get_transforms(args.task, is_training=True),
-        task=args.task
-    )
-
     # Create initial dataloaders with default batch size
     train_loader, val_loader = create_dataloaders(args, batch_size=32)
     
+    # Calculate class distribution from training dataset
+    suggested_weight = calculate_class_distribution(train_loader.dataset)
 
-     # Calculate class distribution from training dataset
-    train_dataset = train_loader.dataset
-    suggested_weight = calculate_class_distribution(train_dataset)
-
-    
     # Create results directory if it doesn't exist
     args.output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -848,14 +916,14 @@ def main():
     print("\nTo view the Optuna Dashboard, run in a separate terminal:")
     print(f"optuna-dashboard {storage}")
     
-    # Run optimization with reduced trials but better focus
+    # Run optimization with proper use of suggested_weight parameter
     study.optimize(
-        lambda trial: objective(trial, args, model_tracker, train_loader, val_loader),
+        lambda trial: objective(trial, args, model_tracker, train_loader, val_loader, suggested_weight),
         n_trials=args.n_trials,
         timeout=args.timeout * 3600 if args.timeout else None,
         gc_after_trial=True,
         show_progress_bar=True,
-        n_jobs=1  # Better stability for multi-GPU training
+        n_jobs=args.n_jobs  # Use configurable n_jobs parameter
     )
     
     # Save study results and create visualizations

@@ -17,7 +17,15 @@ import random
 import os
 from datetime import datetime
 
-import metrics_utils
+import sys
+from pathlib import Path
+
+# Try to get project root dynamically to avoid import errors
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+import src.models.metrics_utils as metrics_utils
 
 def set_all_seeds(seed: int = 42) -> None:
     """Set all random seeds to ensure reproducibility.

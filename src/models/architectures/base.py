@@ -82,17 +82,6 @@ class HistologyClassifier(nn.Module):
                 nn.Dropout(p=self.dropout_rate),  # Add dropout for consistency
                 nn.Linear(1536, self.num_classes)
             )
-            
-        elif model_name == 'swin_v2_b':
-            from torchvision.models import swin_v2_b, Swin_V2_B_Weights
-            self.backbone = swin_v2_b(weights=Swin_V2_B_Weights.DEFAULT)
-            # Modify classifier head
-            in_features = self.backbone.head.in_features
-            self.backbone.head = nn.Sequential(
-                nn.LayerNorm(in_features),
-                nn.Dropout(p=self.dropout_rate),
-                nn.Linear(in_features, self.num_classes)
-            )
 
         elif model_name == 'swin_v2_b':
             from torchvision.models import swin_v2_b, Swin_V2_B_Weights
@@ -107,9 +96,6 @@ class HistologyClassifier(nn.Module):
                 nn.Dropout(p=self.dropout_rate),
                 nn.Linear(in_features, self.num_classes)
             )
-            
-            # Log creation for debugging
-            logging.debug(f"Created Swin V2 B with in_features={in_features}")
             
         else:
             raise ValueError(f"Unsupported model: {model_name}. Use 'resnet18', 'densenet121', 'densenet169', 'swin_v2_b', or 'convnext_large'. For GigaPath, use GigaPathClassifier.")

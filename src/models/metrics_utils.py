@@ -24,6 +24,14 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from dataset import HistologyDataset
+import sys
+
+project_root = Path(__file__).resolve().parent.parent.parent
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+
+# Use absolute import path
+from src.models.dataset import HistologyDataset
 from src.models.model_utils import load_model, get_transforms
 
 def calculate_metrics(y_true, y_pred, y_scores=None, prefix=''):
