@@ -158,7 +158,149 @@ def generate_png_tile_distribution_table():
     
     return latex
 
-# Generate dataset summary statistics table
+# Generate comprehensive dataset summary statistics table
+def generate_enhanced_dataset_summary_table(dataset_type="full"):
+    """Generate enhanced LaTeX table for dataset summary statistics with splits.
+    
+    Args:
+        dataset_type: 'full' for all stains, 'he' for HE stain only
+    """
+    # Create mappings from slide name to splits
+    split_mapping_he, split_mapping_all = create_split_mappings()
+    
+    # Filter dataset based on type
+    if dataset_type == "he":
+        df = tiles_per_particle[tiles_per_particle['stain'] == 'HE'].copy()
+        caption = "Dataset Summary Statistics (Dataset$^{S12-HE}_{IT,v}$)"
+        label = "tab:dataset_summary_he"
+        split_mapping = split_mapping_he
+    else:  # full dataset with all stains
+        df = tiles_per_particle.copy()
+        caption = "Dataset Summary Statistics (Dataset$^{S12-HE,PAS,MG}_{IT,v}$)"
+        label = "tab:dataset_summary_full"
+        split_mapping = split_mapping_all
+    
+    # Add split information
+    df['split'] = df['slide_name'].map(split_mapping)
+    
+    # Function to calculate statistics for a specific split
+    def get_split_stats(split_filter):
+        split_df = df[split_filter]
+        
+        # Basic counts
+        stats = {}
+        stats['slides'] = len(set(split_df['slide_name']))
+        stats['patients'] = len(set(split_df['patient_id']))
+        
+        # Scanner distribution
+        stats['scanner1_slides'] = len(set(split_df[split_df['scanner_id'] == 1]['slide_name']))
+        stats['scanner2_slides'] = len(set(split_df[split_df['scanner_id'] == 2]['slide_name']))
+        
+        # Stain distribution
+        stats['he_slides'] = len(set(split_df[split_df['stain'] == 'HE']['slide_name']))
+        stats['pas_slides'] = len(set(split_df[split_df['stain'] == 'PAS']['slide_name']))
+        stats['mg_slides'] = len(set(split_df[split_df['stain'] == 'MG']['slide_name']))
+        
+        # Particles by type
+        stats['particles'] = len(split_df)
+        stats['corpus_particles'] = len(split_df[split_df['tissue_type'] == 'corpus'])
+        stats['antrum_particles'] = len(split_df[split_df['tissue_type'] == 'antrum'])
+        stats['other_tissue_particles'] = len(split_df[(split_df['tissue_type'] != 'corpus') & 
+                                                      (split_df['tissue_type'] != 'antrum')])
+        
+        # Inflammation status
+        stats['inflamed_slides'] = len(set(split_df[split_df['inflammation_status'] == 'inflamed']['slide_name']))
+        stats['noninflamed_slides'] = len(set(split_df[split_df['inflammation_status'] == 'noninflamed']['slide_name']))
+        stats['other_inflammation_slides'] = stats['slides'] - stats['inflamed_slides'] - stats['noninflamed_slides']
+        
+        # Tiles by category
+        stats['total_tiles'] = split_df['tiles_per_particle'].sum()
+        
+        # Inflammation tiles
+        inflamed_particles = split_df[split_df['inflammation_status'] == 'inflamed']
+        noninflamed_particles = split_df[split_df['inflammation_status'] == 'noninflamed']
+        other_inflammation_particles = split_df[(split_df['inflammation_status'] != 'inflamed') & 
+                                               (split_df['inflammation_status'] != 'noninflamed')]
+        
+        stats['inflamed_tiles'] = inflamed_particles['tiles_per_particle'].sum()
+        stats['noninflamed_tiles'] = noninflamed_particles['tiles_per_particle'].sum()
+        stats['other_inflammation_tiles'] = other_inflammation_particles['tiles_per_particle'].sum()
+        
+        # Tissue tiles
+        corpus_particles = split_df[split_df['tissue_type'] == 'corpus']
+        antrum_particles = split_df[split_df['tissue_type'] == 'antrum']
+        other_tissue_particles = split_df[(split_df['tissue_type'] != 'corpus') & 
+                                         (split_df['tissue_type'] != 'antrum')]
+        
+        stats['corpus_tiles'] = corpus_particles['tiles_per_particle'].sum()
+        stats['antrum_tiles'] = antrum_particles['tiles_per_particle'].sum()
+        stats['other_tissue_tiles'] = other_tissue_particles['tiles_per_particle'].sum()
+        
+        return stats
+    
+    # Calculate statistics for each split
+    total_stats = get_split_stats(df.index.isin(df.index))
+    train_stats = get_split_stats(df['split'] == 'train')
+    val_stats = get_split_stats(df['split'] == 'val')
+    test_stats = get_split_stats(df['split'] == 'test')
+    test_scanner2_stats = get_split_stats(df['split'] == 'test_scanner2')
+    
+    # Generate LaTeX table
+    latex = f"""\\begin{{table}}[ht]
+\\centering
+\\caption{{{caption}}}
+\\label{{{label}}}
+\\resizebox{{\\textwidth}}{{!}}{{
+\\begin{{tabular}}{{l|r|rrrr}}
+\\toprule
+\\textbf{{Characteristic}} & \\textbf{{Total}} & \\textbf{{Train}} & \\textbf{{Val}} & \\textbf{{Test}} & \\textbf{{Test Scanner2}} \\\\
+\\midrule
+\\multicolumn{{6}}{{l}}{{\\textbf{{SLIDE LEVEL}}}} \\\\
+\\midrule
+Total Slides & {total_stats['slides']} & {train_stats['slides']} & {val_stats['slides']} & {test_stats['slides']} & {test_scanner2_stats['slides']} \\\\
+\\hspace{{0.5cm}}Scanner 1 Slides & {total_stats['scanner1_slides']} & {train_stats['scanner1_slides']} & {val_stats['scanner1_slides']} & {test_stats['scanner1_slides']} & {test_scanner2_stats['scanner1_slides']} \\\\
+\\hspace{{0.5cm}}Scanner 2 Slides & {total_stats['scanner2_slides']} & {train_stats['scanner2_slides']} & {val_stats['scanner2_slides']} & {test_stats['scanner2_slides']} & {test_scanner2_stats['scanner2_slides']} \\\\
+\\midrule
+Total Patients & {total_stats['patients']} & {train_stats['patients']} & {val_stats['patients']} & {test_stats['patients']} & {test_scanner2_stats['patients']} \\\\
+\\midrule
+Total Slides & {total_stats['slides']} & {train_stats['slides']} & {val_stats['slides']} & {test_stats['slides']} & {test_scanner2_stats['slides']} \\\\
+\\hspace{{0.5cm}}HE Stained Slides & {total_stats['he_slides']} & {train_stats['he_slides']} & {val_stats['he_slides']} & {test_stats['he_slides']} & {test_scanner2_stats['he_slides']} \\\\
+\\hspace{{0.5cm}}PAS Stained Slides & {total_stats['pas_slides']} & {train_stats['pas_slides']} & {val_stats['pas_slides']} & {test_stats['pas_slides']} & {test_scanner2_stats['pas_slides']} \\\\
+\\hspace{{0.5cm}}MG Stained Slides & {total_stats['mg_slides']} & {train_stats['mg_slides']} & {val_stats['mg_slides']} & {test_stats['mg_slides']} & {test_scanner2_stats['mg_slides']} \\\\
+\\midrule
+Total Slides & {total_stats['slides']} & {train_stats['slides']} & {val_stats['slides']} & {test_stats['slides']} & {test_scanner2_stats['slides']} \\\\
+\\hspace{{0.5cm}}Inflamed Slides & {total_stats['inflamed_slides']} & {train_stats['inflamed_slides']} & {val_stats['inflamed_slides']} & {test_stats['inflamed_slides']} & {test_scanner2_stats['inflamed_slides']} \\\\
+\\hspace{{0.5cm}}Non-inflamed Slides & {total_stats['noninflamed_slides']} & {train_stats['noninflamed_slides']} & {val_stats['noninflamed_slides']} & {test_stats['noninflamed_slides']} & {test_scanner2_stats['noninflamed_slides']} \\\\
+\\hspace{{0.5cm}}Other Inflammation Status & {total_stats['other_inflammation_slides']} & {train_stats['other_inflammation_slides']} & {val_stats['other_inflammation_slides']} & {test_stats['other_inflammation_slides']} & {test_scanner2_stats['other_inflammation_slides']} \\\\
+\\midrule
+\\multicolumn{{6}}{{l}}{{\\textbf{{PARTICLE LEVEL}}}} \\\\
+\\midrule
+Total Particles & {total_stats['particles']} & {train_stats['particles']} & {val_stats['particles']} & {test_stats['particles']} & {test_scanner2_stats['particles']} \\\\
+\\hspace{{0.5cm}}Corpus Particles & {total_stats['corpus_particles']} & {train_stats['corpus_particles']} & {val_stats['corpus_particles']} & {test_stats['corpus_particles']} & {test_scanner2_stats['corpus_particles']} \\\\
+\\hspace{{0.5cm}}Antrum Particles & {total_stats['antrum_particles']} & {train_stats['antrum_particles']} & {val_stats['antrum_particles']} & {test_stats['antrum_particles']} & {test_scanner2_stats['antrum_particles']} \\\\
+\\hspace{{0.5cm}}Other Tissue Particles & {total_stats['other_tissue_particles']} & {train_stats['other_tissue_particles']} & {val_stats['other_tissue_particles']} & {test_stats['other_tissue_particles']} & {test_scanner2_stats['other_tissue_particles']} \\\\
+\\midrule
+\\multicolumn{{6}}{{l}}{{\\textbf{{TILE LEVEL}}}} \\\\
+\\midrule
+Total Tiles & {int(total_stats['total_tiles']):,} & {int(train_stats['total_tiles']):,} & {int(val_stats['total_tiles']):,} & {int(test_stats['total_tiles']):,} & {int(test_scanner2_stats['total_tiles']):,} \\\\
+\\midrule
+Inflammation Classification & & & & & \\\\
+\\hspace{{0.5cm}}Inflamed Tiles & {int(total_stats['inflamed_tiles']):,} & {int(train_stats['inflamed_tiles']):,} & {int(val_stats['inflamed_tiles']):,} & {int(test_stats['inflamed_tiles']):,} & {int(test_scanner2_stats['inflamed_tiles']):,} \\\\
+\\hspace{{0.5cm}}Non-inflamed Tiles & {int(total_stats['noninflamed_tiles']):,} & {int(train_stats['noninflamed_tiles']):,} & {int(val_stats['noninflamed_tiles']):,} & {int(test_stats['noninflamed_tiles']):,} & {int(test_scanner2_stats['noninflamed_tiles']):,} \\\\
+\\hspace{{0.5cm}}Other Inflammation Status & {int(total_stats['other_inflammation_tiles']):,} & {int(train_stats['other_inflammation_tiles']):,} & {int(val_stats['other_inflammation_tiles']):,} & {int(test_stats['other_inflammation_tiles']):,} & {int(test_scanner2_stats['other_inflammation_tiles']):,} \\\\
+\\midrule
+Tissue Classification & & & & & \\\\
+\\hspace{{0.5cm}}Corpus Tiles & {int(total_stats['corpus_tiles']):,} & {int(train_stats['corpus_tiles']):,} & {int(val_stats['corpus_tiles']):,} & {int(test_stats['corpus_tiles']):,} & {int(test_scanner2_stats['corpus_tiles']):,} \\\\
+\\hspace{{0.5cm}}Antrum Tiles & {int(total_stats['antrum_tiles']):,} & {int(train_stats['antrum_tiles']):,} & {int(val_stats['antrum_tiles']):,} & {int(test_stats['antrum_tiles']):,} & {int(test_scanner2_stats['antrum_tiles']):,} \\\\
+\\hspace{{0.5cm}}Other Tissue Tiles & {int(total_stats['other_tissue_tiles']):,} & {int(train_stats['other_tissue_tiles']):,} & {int(val_stats['other_tissue_tiles']):,} & {int(test_stats['other_tissue_tiles']):,} & {int(test_scanner2_stats['other_tissue_tiles']):,} \\\\
+\\bottomrule
+\\end{{tabular}}
+}}
+\\end{{table}}"""
+    
+    return latex
+
+# Generate dataset summary statistics table (keeping for backward compatibility)
 def generate_dataset_summary_table():
     """Generate LaTeX table for dataset summary statistics"""
     # Count unique patients, slides, and particles
@@ -1202,6 +1344,8 @@ def main():
     tables = {
         "png_tile_distribution": generate_png_tile_distribution_table(),
         "dataset_summary": generate_dataset_summary_table(),
+        "dataset_summary_full": generate_enhanced_dataset_summary_table("full"),
+        "dataset_summary_he": generate_enhanced_dataset_summary_table("he"),
         "stain_distribution": generate_stain_distribution_table(),
         "tiles_per_particle": generate_tiles_per_particle_table(),
         "data_splits": generate_data_splits_table(),

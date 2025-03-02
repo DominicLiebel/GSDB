@@ -240,9 +240,9 @@ def plot_combined_roc_curves(model_data: Dict[str, Dict[str, Tuple]],
     plt.gca().set_aspect('equal', adjustable='box')
     
     # Add annotation box with class information
-    plt.figtext(0.5, -0.01, 
-               f"Class information:\nPositive (1): {positive_class}\nNegative (0): {negative_class}",
-               ha="center", fontsize=12, bbox={"facecolor":"lightgray", "alpha":0.5, "pad":5})
+    # plt.figtext(0.5, -0.01, 
+    #           f"Class information:\nPositive (1): {positive_class}\nNegative (0): {negative_class}",
+    #           ha="left", fontsize=12, bbox={"facecolor":"lightgray", "alpha":0.5, "pad":5})
     
     # Save figure with high resolution and extra padding for annotation
     plt.tight_layout()
