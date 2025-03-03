@@ -219,16 +219,57 @@ Models are trained using:
 
 The model implementations can be found in `src/models/architectures/`.
 
-## Results
+## Antrum/Corpus Classification Results - Dataset: HE stained, Test on Scanner1
 
-Our best model achieves:
+For classification of slides from the same scanner as the train and validation set (Scanner1) the best tissue models achieve:
 
-| Model | Task | Test Accuracy | Test F1 | Test AUC |
+| Model | Test Accuracy | Test F1 | Test AUC |
 |-------|------|--------------|---------|----------|
-| ConvNeXt Large | Inflammation | 89.4% | 0.912 | 0.937 |
-| ConvNeXt Large | Tissue Type | 93.2% | 0.936 | 0.952 |
-| Swin V2 B | Inflammation | 87.2% | 0.893 | 0.926 |
-| GigaPath | Inflammation | 91.5% | 0.925 | 0.945 |
+| ResNet18 | xx.x% | 0.xx | 0.xx |
+| Densenet121 | xx.x% | 0.xx | 0.xx |
+| Densenet169 | xx.x% | 0.xx | 0.xx |
+| ConvNeXt Large | xx.x% | 0.xx | 0.xx |
+| Swin V2 B | x.x% | 0.xx | 0.xx |
+| GigaPath | x.x% | 0.xx | 0.xx |
+
+## Antrum/Corpus Generalizability Classification Results - Dataset: HE stained, Test on Scanner2
+
+For classification of slides from a different scanner (Scanner2) as the train and validation set (Scanner1) the best tissue models achieve:
+
+| Model | Test Accuracy | Test F1 | Test AUC |
+|-------|------|--------------|---------|----------|
+| ResNet18 | xx.x% | 0.xx | 0.xx |
+| Densenet121 | xx.x% | 0.xx | 0.xx |
+| Densenet169 | xx.x% | 0.xx | 0.xx |
+| ConvNeXt Large | xx.x% | 0.xx | 0.xx |
+| Swin V2 B | x.x% | 0.xx | 0.xx |
+| GigaPath | x.x% | 0.xx | 0.xx |
+
+## Non/Inflamed Classification Results - Dataset: HE stained, Test on Scanner2
+
+For classification of slides from the same scanner as the train and validation set (Scanner1) the best inflammation models achieve:
+
+| Model | Test Accuracy | Test F1 | Test AUC |
+|-------|------|--------------|---------|----------|
+| ResNet18 | xx.x% | 0.xx | 0.xx |
+| Densenet121 | xx.x% | 0.xx | 0.xx |
+| Densenet169 | xx.x% | 0.xx | 0.xx |
+| ConvNeXt Large | xx.x% | 0.xx | 0.xx |
+| Swin V2 B | x.x% | 0.xx | 0.xx |
+| GigaPath | x.x% | 0.xx | 0.xx |
+
+## Non/Inflamed Generalizability Classification Results - Dataset: HE stained, Test on Scanner2
+
+For classification of slides from a different scanner (Scanner2) as the train and validation set (Scanner1) the best inflammation models achieve:
+
+| Model | Test Accuracy | Test F1 | Test AUC |
+|-------|------|--------------|---------|----------|
+| ResNet18 | xx.x% | 0.xx | 0.xx |
+| Densenet121 | xx.x% | 0.xx | 0.xx |
+| Densenet169 | xx.x% | 0.xx | 0.xx |
+| ConvNeXt Large | xx.x% | 0.xx | 0.xx |
+| Swin V2 B | x.x% | 0.xx | 0.xx |
+| GigaPath | x.x% | 0.xx | 0.xx |
 
 For detailed performance metrics, see `results/metrics/` directory after running evaluation.
 
