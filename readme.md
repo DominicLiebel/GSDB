@@ -224,7 +224,7 @@ The model implementations can be found in `src/models/architectures/`.
 For classification of slides from the same scanner as the train and validation set (Scanner1) the best tissue models achieve:
 
 | Model | Test Accuracy | Test F1 | Test AUC |
-|-------|------|--------------|---------|----------|
+|-------|---------------|---------|----------|
 | ResNet18 | xx.x% | 0.xx | 0.xx |
 | Densenet121 | xx.x% | 0.xx | 0.xx |
 | Densenet169 | xx.x% | 0.xx | 0.xx |
@@ -237,7 +237,7 @@ For classification of slides from the same scanner as the train and validation s
 For classification of slides from a different scanner (Scanner2) as the train and validation set (Scanner1) the best tissue models achieve:
 
 | Model | Test Accuracy | Test F1 | Test AUC |
-|-------|------|--------------|---------|----------|
+|-------|---------------|---------|----------|
 | ResNet18 | xx.x% | 0.xx | 0.xx |
 | Densenet121 | xx.x% | 0.xx | 0.xx |
 | Densenet169 | xx.x% | 0.xx | 0.xx |
@@ -245,12 +245,12 @@ For classification of slides from a different scanner (Scanner2) as the train an
 | Swin V2 B | x.x% | 0.xx | 0.xx |
 | GigaPath | x.x% | 0.xx | 0.xx |
 
-## Non/Inflamed Classification Results - Dataset: HE stained, Test on Scanner2
+## Non/Inflamed Classification Results - Dataset: HE stained, Test on Scanner1
 
 For classification of slides from the same scanner as the train and validation set (Scanner1) the best inflammation models achieve:
 
 | Model | Test Accuracy | Test F1 | Test AUC |
-|-------|------|--------------|---------|----------|
+|-------|---------------|---------|----------|
 | ResNet18 | xx.x% | 0.xx | 0.xx |
 | Densenet121 | xx.x% | 0.xx | 0.xx |
 | Densenet169 | xx.x% | 0.xx | 0.xx |
@@ -263,7 +263,7 @@ For classification of slides from the same scanner as the train and validation s
 For classification of slides from a different scanner (Scanner2) as the train and validation set (Scanner1) the best inflammation models achieve:
 
 | Model | Test Accuracy | Test F1 | Test AUC |
-|-------|------|--------------|---------|----------|
+|-------|---------------|---------|----------|
 | ResNet18 | xx.x% | 0.xx | 0.xx |
 | Densenet121 | xx.x% | 0.xx | 0.xx |
 | Densenet169 | xx.x% | 0.xx | 0.xx |
