@@ -219,7 +219,9 @@ Models are trained using:
 
 The model implementations can be found in `src/models/architectures/`.
 
-## Antrum/Corpus Classification Results - Dataset: HE stained, Test on Scanner1
+## Results
+
+# Antrum/Corpus Classification Results - Dataset: HE stained, Test on Scanner1
 
 For classification of slides from the same scanner as the train and validation set (Scanner1) the best tissue models achieve:
 
@@ -232,7 +234,7 @@ For classification of slides from the same scanner as the train and validation s
 | Swin V2 B | x.x% | 0.xx | 0.xx |
 | GigaPath | x.x% | 0.xx | 0.xx |
 
-## Antrum/Corpus Generalizability Classification Results - Dataset: HE stained, Test on Scanner2
+# Antrum/Corpus Generalizability Classification Results - Dataset: HE stained, Test on Scanner2
 
 For classification of slides from a different scanner (Scanner2) as the train and validation set (Scanner1) the best tissue models achieve:
 
@@ -245,7 +247,7 @@ For classification of slides from a different scanner (Scanner2) as the train an
 | Swin V2 B | x.x% | 0.xx | 0.xx |
 | GigaPath | x.x% | 0.xx | 0.xx |
 
-## Non/Inflamed Classification Results - Dataset: HE stained, Test on Scanner1
+# Non/Inflamed Classification Results - Dataset: HE stained, Test on Scanner1
 
 For classification of slides from the same scanner as the train and validation set (Scanner1) the best inflammation models achieve:
 
@@ -258,7 +260,7 @@ For classification of slides from the same scanner as the train and validation s
 | Swin V2 B | x.x% | 0.xx | 0.xx |
 | GigaPath | x.x% | 0.xx | 0.xx |
 
-## Non/Inflamed Generalizability Classification Results - Dataset: HE stained, Test on Scanner2
+# Non/Inflamed Generalizability Classification Results - Dataset: HE stained, Test on Scanner2
 
 For classification of slides from a different scanner (Scanner2) as the train and validation set (Scanner1) the best inflammation models achieve:
 
