@@ -128,61 +128,100 @@ def find_optimal_threshold(y_true: List, y_prob: List) -> Tuple[float, float, fl
     Returns:
         Tuple containing (optimal_threshold, sensitivity, specificity)
     """
+    # Basic data quality checks
+    logging.info(f"Finding optimal threshold for {len(y_true)} samples")
+    logging.info(f"Class distribution: {np.bincount(np.array(y_true, dtype=int))}")
+    logging.info(f"Predictions range: min={min(y_prob):.4f}, max={max(y_prob):.4f}")
+    
     # Check for empty inputs or only one class
     if len(y_true) == 0 or len(np.unique(y_true)) <= 1:
         logging.warning("find_optimal_threshold: Empty input or only one class present. Using default threshold of 0.5")
         return 0.5, 0.0, 0.0
         
+    # Check for predictions all being the same value
+    if max(y_prob) == min(y_prob):
+        logging.warning(f"All predictions have the same value: {max(y_prob):.4f}. Using default threshold of 0.5")
+        return 0.5, 0.0, 0.0
+    
+    # Convert to numpy arrays for better handling
+    y_true_np = np.array(y_true)
+    y_prob_np = np.array(y_prob)
+    
+    # Basic check for NaN or Inf values
+    if np.isnan(y_prob_np).any() or np.isinf(y_prob_np).any():
+        logging.warning("NaN or Inf values detected in predictions. Cleaning data.")
+        # Replace NaN/Inf with a safe value
+        y_prob_np = np.nan_to_num(y_prob_np, nan=0.5, posinf=1.0, neginf=0.0)
+        
     # Get false positive rate, true positive rate and thresholds
-    fpr, tpr, thresholds = roc_curve(y_true, y_prob)
+    try:
+        fpr, tpr, thresholds = roc_curve(y_true_np, y_prob_np)
+        
+        # Calculate the geometric mean of sensitivity and specificity
+        gmeans = np.sqrt(tpr * (1-fpr))
+        
+        # Log ROC curve statistics
+        auc_score = roc_auc_score(y_true_np, y_prob_np)
+        logging.info(f"ROC AUC: {auc_score:.4f}")
+        
+        # Find the optimal threshold with proper error handling
+        if len(gmeans) > 0:
+            ix = np.argmax(gmeans)
+            optimal_threshold = thresholds[ix]
+            
+            # Directly compute metrics using the chosen threshold
+            predictions = (y_prob_np > optimal_threshold).astype(int)
+            tn, fp, fn, tp = confusion_matrix(y_true_np, predictions).ravel()
+            
+            # Calculate sensitivity and specificity directly
+            sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
+            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+            
+            # Calculate additional metrics for logging
+            accuracy = (tp + tn) / (tp + tn + fp + fn)
+            precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+            f1 = 2 * (precision * sensitivity) / (precision + sensitivity) if (precision + sensitivity) > 0 else 0
+            
+            logging.info(f"Found optimal threshold: {optimal_threshold:.4f}")
+            logging.info(f"Metrics at this threshold: Accuracy={accuracy:.4f}, Sens={sensitivity:.4f}, Spec={specificity:.4f}, F1={f1:.4f}")
+            logging.info(f"Confusion matrix: [TP={tp}, TN={tn}, FP={fp}, FN={fn}]")
+            
+            # For logging purposes
+            roc_sensitivity = tpr[ix] 
+            roc_specificity = 1-fpr[ix]
+            
+            # Check for inconsistency due to interpolation in ROC curve calculation
+            if abs(roc_sensitivity - sensitivity) > 1e-6 or abs(roc_specificity - specificity) > 1e-3:
+                logging.warning("Metrics inconsistency detected in threshold optimization.")
+                logging.warning(f"ROC curve values: sens={roc_sensitivity:.6f}, spec={roc_specificity:.6f}")
+                logging.warning(f"Recalculated: sens={sensitivity:.6f}, spec={specificity:.6f}")
+        else:
+            # Handle the case where gmeans is empty (can happen with edge cases)
+            logging.warning("Empty gmeans array in find_optimal_threshold. Using default threshold of 0.5")
+            optimal_threshold = 0.5
+            sensitivity = 0.0
+            specificity = 0.0
     
-    # Calculate the geometric mean of sensitivity and specificity
-    gmeans = np.sqrt(tpr * (1-fpr))
-    
-    # Find the optimal threshold with proper error handling
-    if len(gmeans) > 0:
-        ix = np.argmax(gmeans)
-        optimal_threshold = thresholds[ix]
-        
-        # Directly compute metrics using the chosen threshold
-        predictions = (np.array(y_prob) > optimal_threshold).astype(int)
-        tn, fp, fn, tp = confusion_matrix(y_true, predictions).ravel()
-        
-        # Calculate sensitivity and specificity directly
-        sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
-        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-        
-        # For logging purposes
-        roc_sensitivity = tpr[ix] 
-        roc_specificity = 1-fpr[ix]
-        
-        # Check for inconsistency due to interpolation in ROC curve calculation
-        if abs(roc_sensitivity - sensitivity) > 1e-6 or abs(roc_specificity - specificity) > 1e-3:
-            logging.warning("Metrics inconsistency detected in threshold optimization.")
-            logging.warning(f"ROC curve values: sens={roc_sensitivity:.6f}, spec={roc_specificity:.6f}")
-            logging.warning(f"Recalculated: sens={sensitivity:.6f}, spec={specificity:.6f}")
-    else:
-        # Handle the case where gmeans is empty (can happen with edge cases)
-        logging.warning("Empty gmeans array in find_optimal_threshold. Using default threshold of 0.5")
-        optimal_threshold = 0.5
-        sensitivity = 0.0
-        specificity = 0.0
+    except Exception as e:
+        logging.error(f"Error in ROC curve calculation: {str(e)}")
+        logging.warning("Defaulting to threshold of 0.5")
+        return 0.5, 0.0, 0.0
     
     # Enforce threshold bounds (0.1 to 0.9) to avoid extreme values that might overfit
     if optimal_threshold < 0.1:
         logging.warning(f"Threshold too low ({optimal_threshold:.4f}), adjusting to 0.1")
         optimal_threshold = 0.1
         # Recalculate metrics with the new threshold
-        predictions = (np.array(y_prob) > optimal_threshold).astype(int)
-        tn, fp, fn, tp = confusion_matrix(y_true, predictions).ravel()
+        predictions = (y_prob_np > optimal_threshold).astype(int)
+        tn, fp, fn, tp = confusion_matrix(y_true_np, predictions).ravel()
         sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
         specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
     elif optimal_threshold > 0.9:
         logging.warning(f"Threshold too high ({optimal_threshold:.4f}), adjusting to 0.9")
         optimal_threshold = 0.9
         # Recalculate metrics with the new threshold
-        predictions = (np.array(y_prob) > optimal_threshold).astype(int)
-        tn, fp, fn, tp = confusion_matrix(y_true, predictions).ravel()
+        predictions = (y_prob_np > optimal_threshold).astype(int)
+        tn, fp, fn, tp = confusion_matrix(y_true_np, predictions).ravel()
         sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
         specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
         
@@ -321,13 +360,25 @@ def calculate_hierarchical_metrics(
     # Determine task based on metadata columns
     is_inflammation_task = 'inflammation_status' in df.columns or any('inflammation' in col for col in df.columns)
     
+    # Check if we have logits or probabilities and log for debugging
+    is_logits = df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1
+    logging.info(f"Raw predictions range: min={df['raw_pred'].min():.4f}, max={df['raw_pred'].max():.4f}")
+    logging.info(f"Predictions appear to be {'logits' if is_logits else 'probabilities'}")
+    logging.info(f"Using threshold: {threshold:.4f} in {'logit' if is_logits else 'probability'} space")
+    
     # ALWAYS calculate tile-level metrics for both tasks
     tile_preds = (df['raw_pred'] > threshold).astype(int)
     
+    # Do a sanity check on predictions
+    total_pos = tile_preds.sum()
+    total_neg = len(tile_preds) - total_pos
+    logging.info(f"Binary predictions: {total_pos} positive, {total_neg} negative out of {len(tile_preds)} total")
+    
     # For ROC-AUC, convert to probabilities if we have logits (negative values)
     # Check minimum value as indicator of logits vs probabilities
-    if df['raw_pred'].min() < 0:  # More reliable indicator of logits
+    if is_logits:  # Using the same check as above
         scores = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
+        logging.info(f"Converted logits to probabilities for AUC calculation")
     else:  # Already have probabilities
         scores = df['raw_pred'].values
     
@@ -346,10 +397,21 @@ def calculate_hierarchical_metrics(
             'label': 'first'  # All tiles from a slide have the same label
         })
         
+        # Use the same logic for slide-level predictions
+        is_slide_logits = slide_df['raw_pred'].min() < 0 or slide_df['raw_pred'].max() > 1
+        logging.info(f"Slide-level raw predictions range: min={slide_df['raw_pred'].min():.4f}, max={slide_df['raw_pred'].max():.4f}")
+        
         slide_preds = (slide_df['raw_pred'] > threshold).astype(int)
+        
+        # Log slide-level prediction distribution
+        slide_pos = slide_preds.sum()
+        slide_neg = len(slide_preds) - slide_pos
+        logging.info(f"Slide-level binary predictions: {slide_pos} positive, {slide_neg} negative out of {len(slide_preds)} total")
+        
         # Check if we have logits (negative values)
-        if slide_df['raw_pred'].min() < 0:
+        if is_slide_logits:
             slide_scores = torch.sigmoid(torch.tensor(slide_df['raw_pred'].values)).numpy()
+            logging.info(f"Converted slide-level logits to probabilities for AUC calculation")
         else:
             slide_scores = slide_df['raw_pred'].values
             
