@@ -145,11 +145,11 @@ def get_class_names(task: str, df: pd.DataFrame = None) -> Tuple[str, str]:
         negative_class = "Noninflamed"
         
         # Try to detect actual labels if dataframe is provided
-        if df is not None and 'inflammation_type' in df.columns:
-            # Find the unique values in the inflammation_type column
+        if df is not None and 'inflammation_status' in df.columns:
+            # Find the unique values in the inflammation_status column
             # that correspond to positive (1) labels
-            pos_values = df[df['label'] == 1]['inflammation_type'].unique()
-            neg_values = df[df['label'] == 0]['inflammation_type'].unique()
+            pos_values = df[df['label'] == 1]['inflammation_status'].unique()
+            neg_values = df[df['label'] == 0]['inflammation_status'].unique()
             
             if len(pos_values) > 0:
                 positive_class = ', '.join(pos_values)
@@ -325,8 +325,8 @@ def main():
                     print(f"Found tissue class information in model: {model_dir}")
                     
             if task == 'inflammation' and inflammation_sample_df is None:
-                # Try to find a dataframe with inflammation_type information
-                if 'inflammation_type' in df.columns:
+                # Try to find a dataframe with inflammation_status information
+                if 'inflammation_status' in df.columns:
                     inflammation_sample_df = df
                     print(f"Found inflammation class information in model: {model_dir}")
                     

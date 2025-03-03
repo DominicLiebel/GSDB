@@ -98,7 +98,7 @@ def evaluate_model(
                 # Add task field to support task detection
                 if task == 'inflammation':
                     # Use inflammation_status from metadata, which is the correct field name in the dataset
-                    pred_dict['inflammation_type'] = metadata.get('inflammation_status', 'unknown')
+                    pred_dict['inflammation_status'] = metadata.get('inflammation_status', 'unknown')
                 
                 predictions.append(pred_dict)
     

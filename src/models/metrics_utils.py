@@ -319,7 +319,7 @@ def calculate_hierarchical_metrics(
     metrics = {}
     
     # Determine task based on metadata columns
-    is_inflammation_task = 'inflammation_type' in df.columns or any('inflammation' in col for col in df.columns)
+    is_inflammation_task = 'inflammation_status' in df.columns or any('inflammation' in col for col in df.columns)
     
     # ALWAYS calculate tile-level metrics for both tasks
     tile_preds = (df['raw_pred'] > threshold).astype(int)
@@ -1081,7 +1081,7 @@ def calculate_validation_thresholds(model_path: Optional[Path] = None, model: Op
                 }
                 
                 if task == 'inflammation':
-                    pred_dict['inflammation_type'] = metadata.get('inflammation_status', 'unknown')
+                    pred_dict['inflammation_status'] = metadata.get('inflammation_status', 'unknown')
                 
                 predictions.append(pred_dict)
     

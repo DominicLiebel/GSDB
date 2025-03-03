@@ -56,8 +56,8 @@ inflammation:
         random_resized_crop:
           size: 224
           scale: [0.8, 1.0]
-        random_horizontal_flip: false  # Not specified as used in the optimal combination
-        random_vertical_flip: false    # Not specified as used in the optimal combination
+        random_horizontal_flip: true  # Not specified as used in the optimal combination
+        random_vertical_flip: true    # Not specified as used in the optimal combination
         color_jitter:
           enabled: false               # "Color jitter augmentation seems to have a negative impact"
         random_rotation:               # "Random rotation and gaussian blur had a positive effect"
@@ -366,13 +366,13 @@ tissue:
       pretrained: true
       feature_extraction: false
     batch_size: 32
-    dropout_rate: 0.35
+    dropout_rate: 0.2559392165832936
     epochs: 50
     optimizer:
       name: AdamW
-      learning_rate: 5e-5
-      weight_decay: 1e-5
-    pos_weight: 0.8
+      learning_rate: 0.00033357612275208674
+      weight_decay: 0.00030089865185583295
+    pos_weight: 0.658150880398308
     scheduler:
       enabled: true
       name: CosineAnnealingLR
