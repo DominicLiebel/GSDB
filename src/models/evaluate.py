@@ -98,7 +98,7 @@ def evaluate_model(
                 # Add task field to support task detection
                 if task == 'inflammation':
                     # Use inflammation_status from metadata, which is the correct field name in the dataset
-                    pred_dict['inflammation_status'] = metadata.get('inflammation_status', 'unknown')
+                    pred_dict['inflammation_type'] = metadata.get('inflammation_status', 'unknown')
                 
                 predictions.append(pred_dict)
     
@@ -428,11 +428,22 @@ def evaluate_model(
     # Calculate metrics using validation-optimized thresholds
     if 'slide' in optimal_thresholds:
         slide_threshold = optimal_thresholds['slide']['threshold']
-        threshold_for_metrics = np.log(slide_threshold/(1-slide_threshold)) if 0 < slide_threshold < 1 else 0.0
         
-        logging.info(f"Calculating metrics using validation-optimized threshold: {threshold_for_metrics:.4f} (logit)")
+        # Check if our predictions are logits or probabilities
+        if df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1:
+            # If we have logits, convert the probability threshold to a logit threshold
+            threshold_for_metrics = np.log(slide_threshold/(1-slide_threshold)) if 0 < slide_threshold < 1 else 0.0
+            logging.info(f"Predictions are logits - converting probability threshold {slide_threshold:.4f} to logit threshold: {threshold_for_metrics:.4f}")
+        else:
+            # If we have probabilities, use the probability threshold directly
+            threshold_for_metrics = slide_threshold
+            logging.info(f"Predictions are probabilities - using probability threshold directly: {threshold_for_metrics:.4f}")
     else:
-        threshold_for_metrics = 0.0  # Default threshold
+        # Default threshold should depend on whether we have logits or probabilities
+        if df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1:
+            threshold_for_metrics = 0.0  # Default logit threshold = 0.0 (probability = 0.5)
+        else:
+            threshold_for_metrics = 0.5  # Default probability threshold = 0.5
     
     # Calculate metrics using specified threshold
     metrics = metrics_utils.calculate_hierarchical_metrics(
