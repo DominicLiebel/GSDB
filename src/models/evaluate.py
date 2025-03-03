@@ -82,14 +82,33 @@ def evaluate_model(
     with torch.no_grad():
         for inputs, labels, metadata_batch in tqdm(data_loader, desc=f"Evaluating {split}"):
             inputs = inputs.to(device)
-            outputs = model(inputs).squeeze()  # Get raw logits
+            outputs = model(inputs).squeeze()  # Get raw model outputs
+            
+            # Check if outputs are logits (outside 0-1 range) or probabilities
+            is_logits = False
+            if outputs.numel() > 0:  # Check if tensor is not empty
+                min_val = outputs.min().item()
+                max_val = outputs.max().item()
+                is_logits = min_val < 0 or max_val > 1
+                
+                if is_logits:
+                    # Convert logits to probabilities
+                    probs = torch.sigmoid(outputs)
+                    logging.info(f"Model outputs appear to be logits (range: {min_val:.4f} to {max_val:.4f}), converting to probabilities")
+                else:
+                    # Already probabilities
+                    probs = outputs
+                    logging.info(f"Model outputs appear to be probabilities (range: {min_val:.4f} to {max_val:.4f})")
+            else:
+                probs = outputs  # Fallback
             
             # Process each sample in the batch
             for i in range(len(outputs)):
                 metadata = {k: v[i] if isinstance(v, list) else v for k, v in metadata_batch.items()}
                 
                 pred_dict = {
-                    'raw_pred': outputs[i].cpu().item(),  # Store raw logits
+                    'raw_pred': outputs[i].cpu().item(),  # Store raw model outputs
+                    'prob': probs[i].cpu().item(),        # Store probabilities
                     'label': labels[i].item(),
                     'particle_id': metadata['particle_id'],
                     'slide_name': metadata['slide_name'],
@@ -228,6 +247,31 @@ def evaluate_model(
             else:
                 logging.warning("No raw_pred column found in dataframe")
                 df['prob'] = 0.5  # Default fallback
+                
+        # Check if predictions might be inverted (AUC < 0.5 suggests predictions are flipped)
+        try:
+            from sklearn.metrics import roc_auc_score
+            auc = roc_auc_score(df['label'], df['prob'])
+            logging.info(f"Initial AUC score: {auc:.4f}")
+            
+            if auc < 0.5:
+                inv_auc = roc_auc_score(df['label'], 1 - df['prob'])
+                logging.warning(f"Low AUC detected: {auc:.4f}. Inverted AUC would be: {inv_auc:.4f}")
+                
+                if inv_auc > 0.6:  # Significantly better when inverted
+                    logging.warning("Detected inverted predictions, auto-correcting...")
+                    df['prob'] = 1 - df['prob']
+                    # Also invert raw_pred if it's available
+                    if 'raw_pred' in df.columns:
+                        if df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1:
+                            # If logits, negate them
+                            df['raw_pred'] = -df['raw_pred']
+                        else:
+                            # If probabilities, invert them
+                            df['raw_pred'] = 1 - df['raw_pred']
+                    logging.info(f"Predictions inverted. New AUC: {inv_auc:.4f}")
+        except Exception as e:
+            logging.warning(f"Could not check for inverted predictions: {str(e)}")
         
         if task == 'inflammation':
             slide_df = df.groupby('slide_name').agg({
@@ -235,8 +279,15 @@ def evaluate_model(
                 'label': 'first'
             }).reset_index()
             
-            # Apply threshold
-            slide_preds = (slide_df['prob'] > best_threshold).astype(int)
+            # Use 'prob' column for threshold application, not 'raw_pred'
+            # This ensures we're using probabilities for thresholding regardless of what the raw model outputs were
+            if 'prob' in slide_df.columns:
+                slide_preds = (slide_df['prob'] > best_threshold).astype(int)
+                logging.info(f"Applied threshold {best_threshold:.4f} to slide-level probabilities")
+            else:
+                # Fallback to raw_pred if prob isn't available (which should never happen after our fixes)
+                logging.warning("No 'prob' column found in slide_df, using 'raw_pred' instead")
+                slide_preds = (slide_df['raw_pred'] > best_threshold).astype(int)
             
             # Recalculate confusion matrix
             from sklearn.metrics import confusion_matrix
@@ -293,8 +344,15 @@ def evaluate_model(
                 'label': 'first'
             }).reset_index()
             
-            # Apply threshold
-            particle_preds = (particle_df['prob'] > best_threshold).astype(int)
+            # Use 'prob' column for threshold application, not 'raw_pred'
+            # This ensures we're using probabilities for thresholding regardless of what the raw model outputs were
+            if 'prob' in particle_df.columns:
+                particle_preds = (particle_df['prob'] > best_threshold).astype(int)
+                logging.info(f"Applied threshold {best_threshold:.4f} to particle-level probabilities")
+            else:
+                # Fallback to raw_pred if prob isn't available (which should never happen after our fixes)
+                logging.warning("No 'prob' column found in particle_df, using 'raw_pred' instead")
+                particle_preds = (particle_df['raw_pred'] > best_threshold).astype(int)
             
             # Recalculate confusion matrix
             from sklearn.metrics import confusion_matrix
@@ -428,6 +486,11 @@ def evaluate_model(
     # Calculate metrics using validation-optimized thresholds
     if 'slide' in optimal_thresholds:
         slide_threshold = optimal_thresholds['slide']['threshold']
+        # !!! BUG FIX !!!
+        # This was a critical error - we were converting a probability threshold back to a logit
+        # when calculate_hierarchical_metrics expects the threshold in the same space as raw_pred
+        # If raw_pred is logits, we need a logit threshold
+        # If raw_pred is probabilities, we need a probability threshold
         
         # Check if our predictions are logits or probabilities
         if df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1:

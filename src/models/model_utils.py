@@ -88,7 +88,19 @@ def load_model(model_path: Path, device: torch.device, architecture: str = "giga
             if isinstance(checkpoint, dict):
                 if 'model_state_dict' in checkpoint:
                     # Standard format (from both train.py and tune.py)
-                    model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+                    state_dict = checkpoint['model_state_dict']
+                    
+                    # Check if the model was saved with DataParallel (has 'module.' prefix)
+                    if any(k.startswith('module.') for k in state_dict.keys()):
+                        logging.info("Detected DataParallel saved model, removing 'module.' prefix")
+                        from collections import OrderedDict
+                        new_state_dict = OrderedDict()
+                        for k, v in state_dict.items():
+                            name = k[7:] if k.startswith('module.') else k
+                            new_state_dict[name] = v
+                        model.load_state_dict(new_state_dict, strict=False)
+                    else:
+                        model.load_state_dict(state_dict, strict=False)
                     
                     # If model comes from tuning, log relevant info
                     if 'trial_number' in checkpoint:
@@ -102,7 +114,18 @@ def load_model(model_path: Path, device: torch.device, architecture: str = "giga
                 else:
                     # Try to load the dictionary as a direct state dict
                     logging.warning("No 'model_state_dict' key found, attempting to load as direct state dict")
-                    model.load_state_dict(checkpoint, strict=False)
+                    
+                    # Check if the model was saved with DataParallel (has 'module.' prefix)
+                    if any(k.startswith('module.') for k in checkpoint.keys()):
+                        logging.info("Detected DataParallel saved model, removing 'module.' prefix")
+                        from collections import OrderedDict
+                        new_state_dict = OrderedDict()
+                        for k, v in checkpoint.items():
+                            name = k[7:] if k.startswith('module.') else k
+                            new_state_dict[name] = v
+                        model.load_state_dict(new_state_dict, strict=False)
+                    else:
+                        model.load_state_dict(checkpoint, strict=False)
             else:
                 raise ValueError(f"Unsupported model format. Expected dictionary with 'model_state_dict'.")
         
