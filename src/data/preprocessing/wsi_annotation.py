@@ -448,16 +448,16 @@ class AnnotationTool:
             logging.error(f"Error saving config: {e}")
 
     def select_model_paths(self):
-        """Allow user to select paths for tissue and inflammation models"""
+        """Allow user to select paths and architectures for tissue and inflammation models"""
         # Create dialog
         dialog = tk.Toplevel(self.root)
-        dialog.title("Select Model Paths")
+        dialog.title("Select Model Paths and Architectures")
         dialog.transient(self.root)
         dialog.grab_set()
         
         # Center dialog
-        window_width = 600
-        window_height = 250
+        window_width = 700
+        window_height = 350
         position_x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (window_width // 2)
         position_y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (window_height // 2)
         dialog.geometry(f"{window_width}x{window_height}+{position_x}+{position_y}")
@@ -465,14 +465,31 @@ class AnnotationTool:
         # Get last used paths from config
         tissue_path = self.config.get('tissue_model_path', '')
         inflammation_path = self.config.get('inflammation_model_path', '')
+        tissue_arch = self.config.get('tissue_model_architecture', 'resnet18')
+        inflammation_arch = self.config.get('inflammation_model_architecture', 'resnet18')
         
-        # Tissue model path
-        tissue_frame = ttk.LabelFrame(dialog, text="Tissue Model Path")
+        # Available architectures
+        available_architectures = [
+            'gigapath',
+            'resnet18',
+            'swin_v2_b',
+            'convnext_large',
+            'densenet121',
+            'densenet169'
+        ]
+        
+        # Tissue model path and architecture
+        tissue_frame = ttk.LabelFrame(dialog, text="Tissue Model Configuration")
         tissue_frame.pack(fill=tk.X, padx=10, pady=5)
         
+        # Path selection
+        path_frame = ttk.Frame(tissue_frame)
+        path_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(path_frame, text="Model Path:").pack(side=tk.LEFT, padx=5)
         tissue_var = tk.StringVar(value=tissue_path)
-        tissue_entry = ttk.Entry(tissue_frame, textvariable=tissue_var, width=60)
-        tissue_entry.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+        tissue_entry = ttk.Entry(path_frame, textvariable=tissue_var, width=60)
+        tissue_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         
         def browse_tissue():
             path = filedialog.askopenfilename(
@@ -483,15 +500,33 @@ class AnnotationTool:
             if path:
                 tissue_var.set(path)
         
-        ttk.Button(tissue_frame, text="Browse...", command=browse_tissue).pack(side=tk.RIGHT, padx=5, pady=5)
+        ttk.Button(path_frame, text="Browse...", command=browse_tissue).pack(side=tk.RIGHT, padx=5)
         
-        # Inflammation model path
-        inflam_frame = ttk.LabelFrame(dialog, text="Inflammation Model Path")
+        # Architecture selection
+        arch_frame = ttk.Frame(tissue_frame)
+        arch_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(arch_frame, text="Architecture:").pack(side=tk.LEFT, padx=5)
+        tissue_arch_var = tk.StringVar(value=tissue_arch)
+        tissue_arch_menu = ttk.Combobox(arch_frame, textvariable=tissue_arch_var, values=available_architectures)
+        tissue_arch_menu.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        
+        # Add architecture description
+        tissue_arch_desc = ttk.Label(tissue_frame, text="Model architecture type (should match your trained model)")
+        tissue_arch_desc.pack(fill=tk.X, padx=5, pady=2)
+        
+        # Inflammation model path and architecture
+        inflam_frame = ttk.LabelFrame(dialog, text="Inflammation Model Configuration")
         inflam_frame.pack(fill=tk.X, padx=10, pady=5)
         
+        # Path selection
+        inflam_path_frame = ttk.Frame(inflam_frame)
+        inflam_path_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(inflam_path_frame, text="Model Path:").pack(side=tk.LEFT, padx=5)
         inflam_var = tk.StringVar(value=inflammation_path)
-        inflam_entry = ttk.Entry(inflam_frame, textvariable=inflam_var, width=60)
-        inflam_entry.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.X, expand=True)
+        inflam_entry = ttk.Entry(inflam_path_frame, textvariable=inflam_var, width=60)
+        inflam_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         
         def browse_inflam():
             path = filedialog.askopenfilename(
@@ -502,7 +537,20 @@ class AnnotationTool:
             if path:
                 inflam_var.set(path)
         
-        ttk.Button(inflam_frame, text="Browse...", command=browse_inflam).pack(side=tk.RIGHT, padx=5, pady=5)
+        ttk.Button(inflam_path_frame, text="Browse...", command=browse_inflam).pack(side=tk.RIGHT, padx=5)
+        
+        # Architecture selection
+        inflam_arch_frame = ttk.Frame(inflam_frame)
+        inflam_arch_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Label(inflam_arch_frame, text="Architecture:").pack(side=tk.LEFT, padx=5)
+        inflam_arch_var = tk.StringVar(value=inflammation_arch)
+        inflam_arch_menu = ttk.Combobox(inflam_arch_frame, textvariable=inflam_arch_var, values=available_architectures)
+        inflam_arch_menu.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        
+        # Add architecture description
+        inflam_arch_desc = ttk.Label(inflam_frame, text="Model architecture type (should match your trained model)")
+        inflam_arch_desc.pack(fill=tk.X, padx=5, pady=2)
         
         # Buttons
         btn_frame = ttk.Frame(dialog)
@@ -512,14 +560,22 @@ class AnnotationTool:
             # Let AutoClassifier find default models
             self.tissue_model_path = None
             self.inflammation_model_path = None
+            self.tissue_model_arch = "resnet18"  # Default architecture
+            self.inflammation_model_arch = "resnet18"  # Default architecture
+            
+            # Update config
             self.config['tissue_model_path'] = ''
             self.config['inflammation_model_path'] = ''
+            self.config['tissue_model_architecture'] = 'resnet18'
+            self.config['inflammation_model_architecture'] = 'resnet18'
             self.save_config()
             dialog.destroy()
         
         def confirm_paths():
             tissue_path = tissue_var.get()
             inflam_path = inflam_var.get()
+            tissue_architecture = tissue_arch_var.get()
+            inflam_architecture = inflam_arch_var.get()
             
             if tissue_path and not Path(tissue_path).exists():
                 messagebox.showerror("Error", f"Tissue model path does not exist: {tissue_path}")
@@ -529,13 +585,17 @@ class AnnotationTool:
                 messagebox.showerror("Error", f"Inflammation model path does not exist: {inflam_path}")
                 return
                 
-            # Save paths
+            # Save paths and architectures
             self.tissue_model_path = tissue_path if tissue_path else None
             self.inflammation_model_path = inflam_path if inflam_path else None
+            self.tissue_model_arch = tissue_architecture
+            self.inflammation_model_arch = inflam_architecture
             
             # Update config
             self.config['tissue_model_path'] = tissue_path
             self.config['inflammation_model_path'] = inflam_path
+            self.config['tissue_model_architecture'] = tissue_architecture
+            self.config['inflammation_model_architecture'] = inflam_architecture
             self.save_config()
             
             dialog.destroy()
@@ -798,11 +858,30 @@ class AnnotationTool:
         # Display help for keyboard shortcuts
         self.root.bind("<F1>", self.show_keyboard_shortcut_help)
         
-        # Quick save for tissue types
-        self.root.bind("1", lambda e: self.quick_save_annotation(tissue_type="corpus"))
-        self.root.bind("2", lambda e: self.quick_save_annotation(tissue_type="antrum"))
-        self.root.bind("3", lambda e: self.quick_save_annotation(tissue_type="intermediate"))
-        self.root.bind("4", lambda e: self.quick_save_annotation(tissue_type="other"))
+        # Quick save for tissue types - using lambda to keep event object
+        self.root.bind("1", lambda e: self.handle_tissue_hotkey("corpus", e))
+        self.root.bind("2", lambda e: self.handle_tissue_hotkey("antrum", e))
+        self.root.bind("3", lambda e: self.handle_tissue_hotkey("intermediate", e))
+        self.root.bind("4", lambda e: self.handle_tissue_hotkey("other", e))
+
+    def handle_tissue_hotkey(self, tissue_type, event):
+        """Handle tissue type hotkeys (1-4) safely"""
+        if self.drawing and self.current_points and len(self.current_points) >= 3:
+            # If actively drawing, safely end the drawing first
+            first = self.current_points[0]
+            last = self.current_points[-1]
+            self.canvas.create_line(
+                last[0], last[1],
+                first[0], first[1],
+                fill='red',
+                width=2,
+                tags='current'
+            )
+            # Now save with the specified tissue type
+            self.quick_save_annotation(tissue_type=tissue_type)
+        else:
+            # If not actively drawing, just process normally
+            self.quick_save_annotation(tissue_type=tissue_type)
 
     def show_keyboard_shortcut_help(self, event=None):
         """Show help for keyboard shortcuts"""
@@ -922,13 +1001,12 @@ class AnnotationTool:
             tags='cluster_marker'
         )
 
-
     def complete_cluster(self, canvas_x, canvas_y):
-        """Complete the cluster with the second corner at mouse position"""
+        """Complete the cluster with the second corner at mouse position and automatically process"""
         if self.cluster_start is None:
             self.status_var.set("Error: No cluster start point found")
             return
-            
+                
         # Convert to WSI coordinates (unscaled)
         x = canvas_x / self.current_scale
         y = canvas_y / self.current_scale
@@ -969,7 +1047,7 @@ class AnnotationTool:
         # Save clusters to file
         self.save_clusters()
         
-        # Automatically process clusters
+        # Automatically process clusters - no button needed anymore
         if hasattr(self, 'current_wsi_name') and self.current_wsi_name:
             self.process_annotations_with_clusters(self.current_wsi_name, self.DOWNSAMPLE)
 
@@ -980,7 +1058,7 @@ class AnnotationTool:
         self.canvas.delete('cluster_marker')
         self.cluster_start = None  # Explicitly set to None
         
-        self.status_var.set(f"Cluster {cluster['id']} saved and processed")
+        self.status_var.set(f"Cluster {cluster['id']} saved and processed automatically")
 
     def save_clusters(self):
         """Save clusters to JSON file"""
@@ -1281,6 +1359,20 @@ class AnnotationTool:
         
         # Status feedback showing what was saved
         self.status_var.set(f"Quick saved: {tissue_type} - {inflammation_status}")
+        
+        # Ensure drawing state is reset
+        self.drawing = False
+        
+        # Make sure the background image is redrawn if it was lost
+        if self.current_image and not self.canvas.find_withtag('background'):
+            self.canvas.create_image(
+                0, 0,
+                image=self.current_image,
+                anchor="nw",
+                tags='background'
+            )
+            # Make sure background is at the bottom of the stack
+            self.canvas.tag_lower('background')
 
     def _bind_scrolling(self):
         """Bind all scrolling events"""
@@ -2143,9 +2235,7 @@ class AnnotationTool:
         cluster_frame = ttk.LabelFrame(top_panel, text="Clusters")
         cluster_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
         
-        # Process clusters button
-        ttk.Button(cluster_frame, text="Process Clusters", 
-                command=self.process_current_clusters).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
+        # The "Process Clusters" button is removed as it's now automatic
         
         # Delete all clusters button
         ttk.Button(cluster_frame, text="Delete All Clusters", 
@@ -2158,6 +2248,22 @@ class AnnotationTool:
             command=self.toggle_clusters_visibility
         )
         self.toggle_clusters_button.pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
+        
+        # Add cluster hotkey reminder
+        ttk.Label(
+            cluster_frame,
+            text="Press 'C' twice to create cluster",
+            font=("Arial", 8),
+            foreground="gray"
+        ).pack(side=tk.TOP, padx=5, pady=2)
+        
+        # Add auto-process indicator
+        ttk.Label(
+            cluster_frame,
+            text="Clusters process automatically",
+            font=("Arial", 8),
+            foreground="green"
+        ).pack(side=tk.TOP, padx=5, pady=2)
         
         # Help frame
         help_frame = ttk.LabelFrame(top_panel, text="Help")
@@ -2701,6 +2807,17 @@ class AnnotationTool:
         # Autosave to file
         self.save_annotations()
         self.status_var.set(f"New annotation saved: {tissue_type} - {inflammation_status}")
+        
+        # Ensure the background image is still visible
+        if self.current_image and not self.canvas.find_withtag('background'):
+            self.canvas.create_image(
+                0, 0,
+                image=self.current_image,
+                anchor="nw",
+                tags='background'
+            )
+            # Make sure background is at the bottom of the stack
+            self.canvas.tag_lower('background')
 
     def draw_saved_annotations(self):
         """Redraw all saved annotations"""
@@ -2822,6 +2939,18 @@ class AnnotationTool:
         self.canvas.delete('current')  # Only delete items tagged as 'current'
         self.current_points = []
         self.drawing = False
+        
+        # Check if the background image is still visible
+        if self.current_image and not self.canvas.find_withtag('background'):
+            # Redraw the background image if it's missing
+            self.canvas_image = self.canvas.create_image(
+                0, 0,
+                image=self.current_image,
+                anchor="nw",
+                tags='background'
+            )
+            # Make sure it's at the back
+            self.canvas.tag_lower('background')
         
     def show_annotation_dialog(self, existing_annotation=None):
         """Show dialog for annotation details"""
@@ -3010,6 +3139,7 @@ class AnnotationTool:
         """End drawing and prompt for annotation details"""
         if not self.drawing or len(self.current_points) < 3:
             self.clear_current()
+            self.drawing = False  # Ensure drawing state is reset
             return
         
         self.drawing = False
@@ -3027,6 +3157,17 @@ class AnnotationTool:
         
         # Show annotation dialog
         self.show_annotation_dialog()
+        
+        # Ensure the background image is still visible if dialog is cancelled
+        if self.current_image and not self.canvas.find_withtag('background'):
+            self.canvas.create_image(
+                0, 0,
+                image=self.current_image,
+                anchor="nw",
+                tags='background'
+            )
+            # Make sure background is at the bottom of the stack
+            self.canvas.tag_lower('background')
     
     def run(self):
         """Start the application"""

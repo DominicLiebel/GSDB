@@ -95,9 +95,8 @@ python src/models/train.py --task inflammation --model resnet18 --seed 42 --dete
 
 ### Configuration Files
 
-All hyperparameters are stored in YAML files:
+All hyperparameters are stored in a YAML file:
 
-- `configs/data_config.yaml`: Data processing parameters
 - `configs/model_config.yaml`: Model training hyperparameters
 
 ### Pre-trained Models
@@ -296,7 +295,7 @@ We welcome contributions to this project. Please follow these steps:
 Please ensure your code follows our [style guide](docs/style_guide.md) and includes appropriate tests.
 
 ## Citation
-
+ 
 If you use this codebase in your research, please cite our paper:
 
 ```bibtex

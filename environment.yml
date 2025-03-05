@@ -19,7 +19,6 @@ dependencies:
   - shapely
   - openslide
   - optuna
-
   - plotly
   - scikit-image
   - tqdm

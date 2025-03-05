@@ -7,10 +7,12 @@ import numpy as np
 import cv2
 from pathlib import Path
 import logging
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple, List, Optional, Union
 import openslide
 import math
 import sys
+import json
+import importlib.util
 
 # Add project root to path if not already
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -19,25 +21,67 @@ if str(project_root) not in sys.path:
 
 # Import path configuration, but make it optional to handle standalone usage
 try:
-    from src.config.paths import get_project_paths
+    # Try to import directly
+    from src.config.paths import get_project_paths, get_base_dir
 except ImportError:
-    # Define a simple fallback if running standalone
-    def get_project_paths(base_dir=None):
-        if base_dir is None:
-            base_dir = Path(__file__).resolve().parent.parent.parent
-        return {
-            "BASE_DIR": base_dir,
-            "MODELS_DIR": base_dir / "results" / "models"
-        }
+    # Try to load from specific location if direct import fails
+    try:
+        import sys
+        import importlib.util
+        paths_module_path = Path("/mnt/data/dliebel/2024_dliebel/src/config/paths.py")
+        if paths_module_path.exists():
+            spec = importlib.util.spec_from_file_location("paths", paths_module_path)
+            paths_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(paths_module)
+            get_project_paths = paths_module.get_project_paths
+            get_base_dir = paths_module.get_base_dir
+        else:
+            # Define a simple fallback if running standalone
+            def get_base_dir():
+                return Path(__file__).resolve().parent.parent.parent
+                
+            def get_project_paths(base_dir=None):
+                if base_dir is None:
+                    base_dir = get_base_dir()
+                return {
+                    "BASE_DIR": base_dir,
+                    "MODELS_DIR": base_dir / "results" / "models"
+                }
+    except Exception:
+        # Final fallback if all else fails
+        def get_base_dir():
+            return Path(__file__).resolve().parent.parent.parent
+            
+        def get_project_paths(base_dir=None):
+            if base_dir is None:
+                base_dir = get_base_dir()
+            return {
+                "BASE_DIR": base_dir,
+                "MODELS_DIR": base_dir / "results" / "models"
+            }
 
 
 class AutoClassifier:
-    def __init__(self, annotation_options=None, paths=None, custom_tissue_model=None, custom_inflammation_model=None):
-        """Initialize classifier with model paths and configuration."""
+    def __init__(self, annotation_options=None, paths=None, custom_tissue_model=None, custom_inflammation_model=None,
+                 tissue_model_arch=None, inflammation_model_arch=None):
+        """Initialize classifier with model paths and configuration.
+        
+        Args:
+            annotation_options: Dictionary of annotation options for coloring
+            paths: Dictionary with paths configuration
+            custom_tissue_model: Path to custom tissue model
+            custom_inflammation_model: Path to custom inflammation model
+            tissue_model_arch: Model architecture for tissue model
+            inflammation_model_arch: Model architecture for inflammation model
+        """
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
         
         self.ANNOTATION_OPTIONS = annotation_options
+        
+        # Store model architecture information
+        self.tissue_model_arch = tissue_model_arch or "resnet18"  # Default to ResNet18
+        self.inflammation_model_arch = inflammation_model_arch or "resnet18"  # Default to ResNet18
         
         # Setup paths using the path configuration system
         if paths is None:
@@ -75,14 +119,52 @@ class AutoClassifier:
         self.logger.info(f"Using device: {self.device}")
         
         try:
-            # Initialize models with correct architecture
-            self.tissue_model = self._create_model()
-            self.inflammation_model = self._create_model()
+            # Try to use model_utils for loading if available
+            model_utils = self._try_import_model_utils()
             
-            # Load models
-            self.tissue_model.load_state_dict(torch.load(self.TISSUE_MODEL_PATH, map_location=self.device, weights_only=True))
-            self.inflammation_model.load_state_dict(torch.load(self.INFLAMMATION_MODEL_PATH, map_location=self.device, weights_only=True))
+            if model_utils:
+                self.logger.info(f"Using model_utils to load models")
+                # Load tissue model
+                self.tissue_model = model_utils.load_model(
+                    self.TISSUE_MODEL_PATH, 
+                    self.device, 
+                    architecture=self.tissue_model_arch
+                )
+                
+                # Load inflammation model
+                self.inflammation_model = model_utils.load_model(
+                    self.INFLAMMATION_MODEL_PATH, 
+                    self.device, 
+                    architecture=self.inflammation_model_arch
+                )
+                
+                # Get appropriate transforms
+                self.transform = model_utils.get_transforms(is_training=False)
+                
+            else:
+                # Fall back to manual model loading
+                self.logger.info("Falling back to manual model loading")
+                # Initialize models with correct architectures
+                self.tissue_model = self._create_model(self.tissue_model_arch)
+                self.inflammation_model = self._create_model(self.inflammation_model_arch)
+                
+                # Load models
+                self.tissue_model.load_state_dict(
+                    torch.load(self.TISSUE_MODEL_PATH, map_location=self.device, weights_only=True)
+                )
+                self.inflammation_model.load_state_dict(
+                    torch.load(self.INFLAMMATION_MODEL_PATH, map_location=self.device, weights_only=True)
+                )
+                
+                # Setup transform to match validation transform from training
+                self.transform = transforms.Compose([
+                    transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC),
+                    transforms.CenterCrop(224),
+                    transforms.ToTensor(),
+                    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+                ])
             
+            # Set both models to evaluation mode
             self.tissue_model.eval()
             self.inflammation_model.eval()
             
@@ -92,13 +174,33 @@ class AutoClassifier:
             self.logger.error(f"Error initializing models: {str(e)}")
             raise
 
-        # Setup transform to match validation transform from training
-        self.transform = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
+    def _try_import_model_utils(self):
+        """Try to import model_utils from different locations."""
+        try:
+            # First try from project structure using the paths module
+            try:
+                from src.config.paths import get_project_paths
+                paths = get_project_paths()
+                base_dir = paths.get("BASE_DIR")
+                if base_dir:
+                    model_utils_path = base_dir / "src" / "models" / "model_utils.py"
+                    if model_utils_path.exists():
+                        self.logger.info(f"Importing model_utils from {model_utils_path}")
+                        spec = importlib.util.spec_from_file_location("model_utils", model_utils_path)
+                        model_utils = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(model_utils)
+                        return model_utils
+            except Exception as e:
+                self.logger.warning(f"Could not import model_utils using paths module: {e}")
+            
+            # Then try from regular import path
+            self.logger.info("Attempting to import model_utils from regular path")
+            from src.models import model_utils
+            return model_utils
+            
+        except Exception as e:
+            self.logger.warning(f"Could not import model_utils: {e}")
+            return None
 
     def _find_model(self, task: str) -> Path:
         """Find the latest model for the given task.
@@ -156,10 +258,77 @@ class AutoClassifier:
         
         return fallback_paths[task]
 
-    def _create_model(self):
-        """Initialize ResNet18 model with correct architecture from training"""
-        model = models.resnet18(weights=None)
-        model.fc = nn.Linear(model.fc.in_features, 1)
+    def _create_model(self, architecture: str):
+        """Initialize model with the specified architecture.
+        
+        Args:
+            architecture: Model architecture to use (e.g., 'gigapath', 'resnet18', 'swin_v2_b')
+            
+        Returns:
+            Initialized PyTorch model
+        """
+        # Normalize architecture string for comparison
+        arch_lower = architecture.lower()
+        
+        # Create model based on architecture
+        if 'gigapath' in arch_lower:
+            try:
+                # Attempt to import GigaPathClassifier - this is a fallback if model_utils failed
+                try:
+                    from src.models.architectures import GigaPathClassifier
+                    model = GigaPathClassifier(num_classes=1)
+                except ImportError:
+                    # Simplified fallback model
+                    self.logger.warning("Could not import GigaPathClassifier, using ResNet50 as fallback")
+                    model = models.resnet50(weights=None)
+                    model.fc = nn.Linear(model.fc.in_features, 1)
+            except Exception as e:
+                self.logger.error(f"Failed to initialize GigaPath model: {e}. Using ResNet18 fallback.")
+                model = models.resnet18(weights=None)
+                model.fc = nn.Linear(model.fc.in_features, 1)
+        
+        elif 'resnet18' in arch_lower:
+            model = models.resnet18(weights=None)
+            model.fc = nn.Linear(model.fc.in_features, 1)
+        
+        elif 'swin_v2_b' in arch_lower:
+            try:
+                # Initialize Swin Transformer V2-B
+                model = models.swin_v2_b(weights=None)
+                # Replace the classifier head
+                model.head = nn.Linear(model.head.in_features, 1)
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Swin V2-B model: {e}. Using fallback.")
+                model = models.resnet18(weights=None)
+                model.fc = nn.Linear(model.fc.in_features, 1)
+        
+        elif 'convnext_large' in arch_lower:
+            try:
+                # Initialize ConvNeXt Large
+                model = models.convnext_large(weights=None)
+                # Replace the classifier head
+                model.classifier[2] = nn.Linear(model.classifier[2].in_features, 1)
+            except Exception as e:
+                self.logger.error(f"Failed to initialize ConvNeXt Large model: {e}. Using fallback.")
+                model = models.resnet18(weights=None)
+                model.fc = nn.Linear(model.fc.in_features, 1)
+        
+        elif 'densenet121' in arch_lower:
+            model = models.densenet121(weights=None)
+            # Replace classifier
+            model.classifier = nn.Linear(model.classifier.in_features, 1)
+        
+        elif 'densenet169' in arch_lower:
+            model = models.densenet169(weights=None)
+            # Replace classifier
+            model.classifier = nn.Linear(model.classifier.in_features, 1)
+        
+        else:
+            # Default to ResNet18 if architecture not recognized
+            self.logger.warning(f"Unrecognized architecture: {architecture}. Using ResNet18 as fallback.")
+            model = models.resnet18(weights=None)
+            model.fc = nn.Linear(model.fc.in_features, 1)
+            
         return model.to(self.device)
 
     def extract_tiles_from_region(self, slide_path: str, coords: List[List[float]]) -> List[Image.Image]:
