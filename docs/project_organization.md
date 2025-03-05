@@ -114,8 +114,7 @@ The project uses a hierarchical configuration system:
 2. **Model-Specific Configuration**: Specialized parameters for specific models
 3. **Command-Line Overrides**: Runtime parameter adjustments
 
-Key configuration files:
-- `configs/data_config.yaml`: Dataset parameters
+Key configuration file:
 - `configs/model_config.yaml`: Model architectures and training parameters
 
 ## Development Guidelines

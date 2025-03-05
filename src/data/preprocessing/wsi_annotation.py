@@ -1,25 +1,32 @@
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-from PIL import Image, ImageTk
-Image.MAX_IMAGE_PIXELS = None  # Disable DecompressionBomb warning
-import numpy as np
+# Standard library imports
 import json
-from pathlib import Path
 import logging
+import re
+import sys
+import threading
+import traceback
+import uuid
 from datetime import datetime
 from enum import Enum
-from typing import List, Dict, Tuple
-import uuid
-import re
-from shapely.geometry import Polygon, Point
-import sys
-import cv2
-from skimage import measure
-import threading
+from pathlib import Path
 from queue import Queue
-import traceback
+from typing import Dict, List, Optional, Tuple
+
+# Third-party imports
+import cv2
+import numpy as np
+import tkinter as tk
+from PIL import Image, ImageTk
+from shapely.geometry import Polygon, Point
+from skimage import measure
+from tkinter import ttk, messagebox, filedialog
+
+# Disable DecompressionBomb warning
+Image.MAX_IMAGE_PIXELS = None
+
 
 class AnnotationType(Enum):
+    """Enumeration of annotation types."""
     TISSUE = "tissue"
     INFLAMMATION = "inflammation"
 
@@ -843,10 +850,10 @@ class AnnotationTool:
         self.setup_status_bar(main_content)
         
 
-    def setup_keyboard_shortcuts(self):
-        """Setup keyboard shortcuts for faster annotation with MacOS support"""
+    def setup_keyboard_shortcuts(self) -> None:
+        """Setup keyboard shortcuts for faster annotation with MacOS support."""
         
-        # Additional shortcuts
+        # Basic shortcuts
         self.root.bind("<Return>", self.handle_enter_key)
         self.root.bind("<Delete>", lambda e: self.delete_selected_from_list())
         self.root.bind("e", lambda e: self.edit_selected_annotations(e))
@@ -864,8 +871,16 @@ class AnnotationTool:
         self.root.bind("3", lambda e: self.handle_tissue_hotkey("intermediate", e))
         self.root.bind("4", lambda e: self.handle_tissue_hotkey("other", e))
 
-    def handle_tissue_hotkey(self, tissue_type, event):
-        """Handle tissue type hotkeys (1-4) safely"""
+    def handle_tissue_hotkey(self, tissue_type: str, event=None) -> None:
+        """Handle tissue type hotkeys (1-4) safely.
+        
+        Safely completes the current drawing (if active) and saves the annotation
+        with the specified tissue type.
+        
+        Args:
+            tissue_type: Tissue type to assign ('corpus', 'antrum', etc.)
+            event: Tkinter event object (optional)
+        """
         if self.drawing and self.current_points and len(self.current_points) >= 3:
             # If actively drawing, safely end the drawing first
             first = self.current_points[0]
@@ -1001,8 +1016,13 @@ class AnnotationTool:
             tags='cluster_marker'
         )
 
-    def complete_cluster(self, canvas_x, canvas_y):
-        """Complete the cluster with the second corner at mouse position and automatically process"""
+    def complete_cluster(self, canvas_x: float, canvas_y: float) -> None:
+        """Complete the cluster with the second corner at mouse position and automatically process.
+        
+        Args:
+            canvas_x: X coordinate of the second corner in canvas space
+            canvas_y: Y coordinate of the second corner in canvas space
+        """
         if self.cluster_start is None:
             self.status_var.set("Error: No cluster start point found")
             return
@@ -1049,14 +1069,13 @@ class AnnotationTool:
         
         # Automatically process clusters - no button needed anymore
         if hasattr(self, 'current_wsi_name') and self.current_wsi_name:
-            self.process_annotations_with_clusters(self.current_wsi_name, self.DOWNSAMPLE)
-
+            self._process_annotations_with_clusters(self.current_wsi_name, self.DOWNSAMPLE)
             # Update the annotation list to show current cluster IDs
             self.update_annotation_list()
         
-        # CRITICAL: Reset all state for next cluster
+        # Reset all state for next cluster
         self.canvas.delete('cluster_marker')
-        self.cluster_start = None  # Explicitly set to None
+        self.cluster_start = None
         
         self.status_var.set(f"Cluster {cluster['id']} saved and processed automatically")
 
@@ -1081,18 +1100,26 @@ class AnnotationTool:
         except Exception as e:
             logging.error(f"Error saving clusters: {e}")
 
-    def process_annotations_with_clusters(self, wsi_name: str, downsample_factor: int = 16):
-        """Process annotations and add cluster IDs"""
+    def _process_annotations_with_clusters(self, wsi_name: str, downsample_factor: int = 16) -> int:
+        """Process annotations and add cluster IDs.
+        
+        Args:
+            wsi_name: Name of the WSI to process
+            downsample_factor: Factor by which the slide was downsampled
+            
+        Returns:
+            int: Number of annotations updated with cluster IDs
+        """
         try:
             # Load clusters (coordinates are in full resolution)
             cluster_file = self.annotation_folder / "clusters" / f"{wsi_name}_clusters.json"
             if not cluster_file.exists():
                 logging.error(f"No clusters found for {wsi_name}")
-                return
-                
+                return 0
+                    
             with open(cluster_file, 'r') as f:
                 clusters = json.load(f)
-            
+                    
             # Process in-memory annotations (for immediate UI update)
             annotations_updated = 0
             
@@ -1103,8 +1130,8 @@ class AnnotationTool:
                 center_y_display = sum(y for _, y in coords) / len(coords)
                 
                 # Convert to full resolution coordinates
-                center_x_full = center_x_display * self.DOWNSAMPLE / self.current_scale
-                center_y_full = center_y_display * self.DOWNSAMPLE / self.current_scale
+                center_x_full = center_x_display * downsample_factor / self.current_scale
+                center_y_full = center_y_display * downsample_factor / self.current_scale
                 
                 # Find which cluster contains this point
                 found_cluster = False
@@ -1159,7 +1186,7 @@ class AnnotationTool:
             logging.error(f"Error processing clusters: {e}")
             self.status_var.set("Error processing clusters")
             
-        return annotations_updated  # Return count for potential use by callers
+        return annotations_updated
 
     def process_current_clusters(self):
         """Process clusters for current WSI"""
@@ -1341,15 +1368,32 @@ class AnnotationTool:
             except Exception as e:
                 logging.error(f"Error moving annotation: {str(e)}")
 
-    def quick_save_annotation(self, event=None, tissue_type=None, inflammation_status=None):
-        """Save annotation without dialog using last used or default values"""
+    def quick_save_annotation(self, event=None, tissue_type: Optional[str] = None, 
+                            inflammation_status: Optional[str] = None) -> None:
+        """Save annotation without dialog using last used or default values.
+        
+        Args:
+            event: Tkinter event object (optional)
+            tissue_type: Tissue type to assign (if None, uses last used or default)
+            inflammation_status: Inflammation status to assign (if None, uses default)
+        """
         if not self.current_points or len(self.current_points) < 3:
             return
             
         # Use provided values, last used values, or defaults
-        tissue_type = tissue_type or getattr(self, 'last_tissue_type', list(self.ANNOTATION_OPTIONS['tissue'].keys())[0])
-        inflammation_status = inflammation_status or getattr(self, 'default_inflammation_status', 
-                                                    list(self.ANNOTATION_OPTIONS['inflammation_status'].keys())[0])
+        tissue_options = list(self.ANNOTATION_OPTIONS['tissue'].keys())
+        default_tissue = tissue_options[0] if tissue_options else "other"
+        
+        inflammation_options = list(self.ANNOTATION_OPTIONS['inflammation_status'].keys())
+        default_inflammation = inflammation_options[0] if inflammation_options else "other"
+        
+        # Determine tissue type from arguments or defaults
+        tissue_type = (tissue_type or 
+                    getattr(self, 'last_tissue_type', default_tissue))
+        
+        # Determine inflammation status from arguments or defaults
+        inflammation_status = (inflammation_status or 
+                            getattr(self, 'default_inflammation_status', default_inflammation))
         
         # Save the annotation
         self.save_current_annotation(tissue_type, inflammation_status)
@@ -2188,8 +2232,12 @@ class AnnotationTool:
         """Alias for detect_regions_of_interest for backward compatibility"""
         self.detect_regions_of_interest()
     
-    def setup_top_panel(self, parent):
-        """Setup top panel with buttons and inflammation status controls"""
+    def setup_top_panel(self, parent: ttk.Frame) -> None:
+        """Setup top panel with buttons and inflammation status controls.
+        
+        Args:
+            parent: Parent frame to add the top panel to
+        """
         top_panel = ttk.Frame(parent)
         top_panel.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
         
@@ -2197,22 +2245,30 @@ class AnnotationTool:
         file_frame = ttk.LabelFrame(top_panel, text="File")
         file_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
         
-        ttk.Button(file_frame, text="Load Slide Directory", 
-                command=self.load_wsi_directory).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
+        ttk.Button(
+            file_frame, 
+            text="Load Slide Directory", 
+            command=self.load_wsi_directory
+        ).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
                 
         # Middle - annotation operations
         annotation_frame = ttk.LabelFrame(top_panel, text="Annotations")
         annotation_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
         
         # Split auto-detect into two separate functions
-        ttk.Button(annotation_frame, text="Detect Regions", 
-                command=self.detect_regions_of_interest).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
+        ttk.Button(
+            annotation_frame, 
+            text="Detect Regions", 
+            command=self.detect_regions_of_interest
+        ).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
         
-        ttk.Button(annotation_frame, text="Auto-classify Regions", 
-                command=self.classify_regions).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
+        ttk.Button(
+            annotation_frame, 
+            text="Auto-classify Regions", 
+            command=self.classify_regions
+        ).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
         
-        
-        # Quick inflation status buttons
+        # Quick inflammation status buttons
         inflammation_frame = ttk.LabelFrame(top_panel, text="Quick Inflammation Status")
         inflammation_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
         
@@ -2235,11 +2291,12 @@ class AnnotationTool:
         cluster_frame = ttk.LabelFrame(top_panel, text="Clusters")
         cluster_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
         
-        # The "Process Clusters" button is removed as it's now automatic
-        
         # Delete all clusters button
-        ttk.Button(cluster_frame, text="Delete All Clusters", 
-                command=self.delete_all_clusters).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
+        ttk.Button(
+            cluster_frame, 
+            text="Delete All Clusters", 
+            command=self.delete_all_clusters
+        ).pack(side=tk.TOP, padx=5, pady=2, fill=tk.X)
                 
         # Toggle clusters visibility button
         self.toggle_clusters_button = ttk.Button(

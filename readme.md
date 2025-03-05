@@ -90,7 +90,7 @@ You can also set the seed via command line in all scripts:
 python src/models/train.py --task inflammation --model resnet18 --seed 42 --deterministic
 ```
 
-**Important Note:** The data splitting script (create_splits.py) uses a different seed (44) to ensure balanced class distribution. This was necessary as seed 42 produced imbalanced splits.
+**Important Note:** The data splitting script (create_splits.py) uses the base seed plus 2 (seed 42+2=44) to ensure balanced class distribution. This offset was found to produce better balance between train/validation/test sets than the default seed alone, as described in the Master's Thesis.
 
 
 ### Configuration Files

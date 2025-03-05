@@ -1,18 +1,28 @@
+"""
+Histology Auto-Classification Module
+
+This module implements automatic classification of histology images using pre-trained models.
+It supports multiple architectures and can automatically detect model paths.
+"""
+
+# Standard library imports
+import importlib.util
+import json
+import logging
+import math
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+
+# Third-party imports
+import cv2
+import numpy as np
+import openslide
 import torch
 import torch.nn as nn
 import torchvision.models as models
 import torchvision.transforms as transforms
 from PIL import Image
-import numpy as np
-import cv2
-from pathlib import Path
-import logging
-from typing import Dict, Tuple, List, Optional, Union
-import openslide
-import math
-import sys
-import json
-import importlib.util
 
 # Add project root to path if not already
 project_root = Path(__file__).resolve().parent.parent.parent
@@ -26,8 +36,6 @@ try:
 except ImportError:
     # Try to load from specific location if direct import fails
     try:
-        import sys
-        import importlib.util
         paths_module_path = Path("/mnt/data/dliebel/2024_dliebel/src/config/paths.py")
         if paths_module_path.exists():
             spec = importlib.util.spec_from_file_location("paths", paths_module_path)
@@ -38,9 +46,11 @@ except ImportError:
         else:
             # Define a simple fallback if running standalone
             def get_base_dir():
+                """Get base directory from current file path."""
                 return Path(__file__).resolve().parent.parent.parent
                 
             def get_project_paths(base_dir=None):
+                """Get default project paths using the base directory."""
                 if base_dir is None:
                     base_dir = get_base_dir()
                 return {
@@ -50,9 +60,11 @@ except ImportError:
     except Exception:
         # Final fallback if all else fails
         def get_base_dir():
+            """Get base directory from current file path."""
             return Path(__file__).resolve().parent.parent.parent
             
         def get_project_paths(base_dir=None):
+            """Get default project paths using the base directory."""
             if base_dir is None:
                 base_dir = get_base_dir()
             return {
@@ -62,8 +74,36 @@ except ImportError:
 
 
 class AutoClassifier:
-    def __init__(self, annotation_options=None, paths=None, custom_tissue_model=None, custom_inflammation_model=None,
-                 tissue_model_arch=None, inflammation_model_arch=None):
+    """Automatic classifier for histology regions.
+    
+    This class handles the loading of pretrained tissue and inflammation models,
+    extraction of tiles from regions, and classification of those regions.
+    
+    Attributes:
+        ANNOTATION_OPTIONS: Dictionary containing annotation options for coloring
+        tissue_model_arch: Model architecture for tissue classification
+        inflammation_model_arch: Model architecture for inflammation classification
+        paths: Dictionary with paths configuration
+        TISSUE_MODEL_PATH: Path to the tissue model file
+        INFLAMMATION_MODEL_PATH: Path to the inflammation model file
+        TILE_SIZE: Size of tiles to extract from regions
+        OVERLAP: Overlap between tiles
+        DOWNSAMPLE: Downsample factor for coordinate conversion
+        device: PyTorch device to use for inference
+        tissue_model: Loaded tissue classification model
+        inflammation_model: Loaded inflammation classification model
+        transform: Image transform pipeline for model input
+    """
+    
+    def __init__(
+            self, 
+            annotation_options: Optional[Dict] = None, 
+            paths: Optional[Dict[str, Path]] = None, 
+            custom_tissue_model: Optional[Union[str, Path]] = None, 
+            custom_inflammation_model: Optional[Union[str, Path]] = None,
+            tissue_model_arch: Optional[str] = None, 
+            inflammation_model_arch: Optional[str] = None
+    ):
         """Initialize classifier with model paths and configuration.
         
         Args:
@@ -73,6 +113,9 @@ class AutoClassifier:
             custom_inflammation_model: Path to custom inflammation model
             tissue_model_arch: Model architecture for tissue model
             inflammation_model_arch: Model architecture for inflammation model
+            
+        Raises:
+            Exception: If models cannot be initialized properly
         """
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
@@ -123,7 +166,7 @@ class AutoClassifier:
             model_utils = self._try_import_model_utils()
             
             if model_utils:
-                self.logger.info(f"Using model_utils to load models")
+                self.logger.info("Using model_utils to load models")
                 # Load tissue model
                 self.tissue_model = model_utils.load_model(
                     self.TISSUE_MODEL_PATH, 
@@ -174,8 +217,12 @@ class AutoClassifier:
             self.logger.error(f"Error initializing models: {str(e)}")
             raise
 
-    def _try_import_model_utils(self):
-        """Try to import model_utils from different locations."""
+    def _try_import_model_utils(self) -> Optional[object]:
+        """Try to import model_utils from different locations.
+        
+        Returns:
+            The model_utils module if found, None otherwise
+        """
         try:
             # First try from project structure using the paths module
             try:
@@ -186,7 +233,9 @@ class AutoClassifier:
                     model_utils_path = base_dir / "src" / "models" / "model_utils.py"
                     if model_utils_path.exists():
                         self.logger.info(f"Importing model_utils from {model_utils_path}")
-                        spec = importlib.util.spec_from_file_location("model_utils", model_utils_path)
+                        spec = importlib.util.spec_from_file_location(
+                            "model_utils", model_utils_path
+                        )
                         model_utils = importlib.util.module_from_spec(spec)
                         spec.loader.exec_module(model_utils)
                         return model_utils
@@ -253,12 +302,14 @@ class AutoClassifier:
         }
         
         # Log warning about using fallback
-        self.logger.warning(f"Could not find {task} model in standard locations. "
-                          f"Using fallback path: {fallback_paths[task]}")
+        self.logger.warning(
+            f"Could not find {task} model in standard locations. "
+            f"Using fallback path: {fallback_paths[task]}"
+        )
         
         return fallback_paths[task]
 
-    def _create_model(self, architecture: str):
+    def _create_model(self, architecture: str) -> nn.Module:
         """Initialize model with the specified architecture.
         
         Args:
@@ -279,11 +330,15 @@ class AutoClassifier:
                     model = GigaPathClassifier(num_classes=1)
                 except ImportError:
                     # Simplified fallback model
-                    self.logger.warning("Could not import GigaPathClassifier, using ResNet50 as fallback")
+                    self.logger.warning(
+                        "Could not import GigaPathClassifier, using ResNet50 as fallback"
+                    )
                     model = models.resnet50(weights=None)
                     model.fc = nn.Linear(model.fc.in_features, 1)
             except Exception as e:
-                self.logger.error(f"Failed to initialize GigaPath model: {e}. Using ResNet18 fallback.")
+                self.logger.error(
+                    f"Failed to initialize GigaPath model: {e}. Using ResNet18 fallback."
+                )
                 model = models.resnet18(weights=None)
                 model.fc = nn.Linear(model.fc.in_features, 1)
         
@@ -298,7 +353,9 @@ class AutoClassifier:
                 # Replace the classifier head
                 model.head = nn.Linear(model.head.in_features, 1)
             except Exception as e:
-                self.logger.error(f"Failed to initialize Swin V2-B model: {e}. Using fallback.")
+                self.logger.error(
+                    f"Failed to initialize Swin V2-B model: {e}. Using fallback."
+                )
                 model = models.resnet18(weights=None)
                 model.fc = nn.Linear(model.fc.in_features, 1)
         
@@ -309,7 +366,9 @@ class AutoClassifier:
                 # Replace the classifier head
                 model.classifier[2] = nn.Linear(model.classifier[2].in_features, 1)
             except Exception as e:
-                self.logger.error(f"Failed to initialize ConvNeXt Large model: {e}. Using fallback.")
+                self.logger.error(
+                    f"Failed to initialize ConvNeXt Large model: {e}. Using fallback."
+                )
                 model = models.resnet18(weights=None)
                 model.fc = nn.Linear(model.fc.in_features, 1)
         
@@ -325,14 +384,31 @@ class AutoClassifier:
         
         else:
             # Default to ResNet18 if architecture not recognized
-            self.logger.warning(f"Unrecognized architecture: {architecture}. Using ResNet18 as fallback.")
+            self.logger.warning(
+                f"Unrecognized architecture: {architecture}. Using ResNet18 as fallback."
+            )
             model = models.resnet18(weights=None)
             model.fc = nn.Linear(model.fc.in_features, 1)
             
         return model.to(self.device)
 
-    def extract_tiles_from_region(self, slide_path: str, coords: List[List[float]]) -> List[Image.Image]:
-        """Extract overlapping tiles from a region in the WSI"""
+    def extract_tiles_from_region(
+            self, 
+            slide_path: str, 
+            coords: List[List[float]]
+    ) -> List[Image.Image]:
+        """Extract overlapping tiles from a region in the WSI.
+        
+        Args:
+            slide_path: Path to the slide file
+            coords: List of coordinate pairs defining the region boundary
+            
+        Returns:
+            List of extracted image tiles from the region
+            
+        Raises:
+            Exception: If tile extraction fails
+        """
         try:
             # Open the slide
             slide = openslide.OpenSlide(str(slide_path))
@@ -384,8 +460,25 @@ class AutoClassifier:
             self.logger.error(f"Error extracting tiles: {str(e)}")
             raise
 
-    def classify_region(self, tiles: List[Image.Image]) -> Tuple[str, str, Dict[str, float], Dict[str, float]]:
-        """Classify tissue type and inflammation status using voting from tiles"""
+    def classify_region(
+            self, 
+            tiles: List[Image.Image]
+    ) -> Tuple[str, str, Dict[str, float], Dict[str, float]]:
+        """Classify tissue type and inflammation status using voting from tiles.
+        
+        Args:
+            tiles: List of image tiles from the region
+            
+        Returns:
+            Tuple containing:
+                - Tissue type prediction (corpus/antrum/other)
+                - Inflammation status prediction (inflamed/noninflamed/other)
+                - Dictionary of tissue type probabilities
+                - Dictionary of inflammation status probabilities
+                
+        Raises:
+            Exception: If classification fails
+        """
         try:
             tissue_votes = {'corpus': 0, 'antrum': 0}
             inflammation_votes = {'noninflamed': 0, 'inflamed': 0}
@@ -406,7 +499,9 @@ class AutoClassifier:
                     tissue_total_probs['antrum'] += (1 - tissue_output)
                     
                     # Get inflammation prediction
-                    inflammation_output = torch.sigmoid(self.inflammation_model(img_tensor)).item()
+                    inflammation_output = torch.sigmoid(
+                        self.inflammation_model(img_tensor)
+                    ).item()
                     inflammation_pred = "inflamed" if inflammation_output > 0.5 else "noninflamed"
                     inflammation_votes[inflammation_pred] += 1
                     inflammation_total_probs['inflamed'] += inflammation_output
@@ -431,8 +526,20 @@ class AutoClassifier:
             self.logger.error(f"Error classifying tiles: {str(e)}")
             raise
 
-    def process_wsi(self, mrxs_path: Path, annotations: List[dict]) -> List[dict]:
-        """Process entire WSI and update annotations with classifications"""
+    def process_wsi(
+            self, 
+            mrxs_path: Path, 
+            annotations: List[dict]
+    ) -> List[dict]:
+        """Process entire WSI and update annotations with classifications.
+        
+        Args:
+            mrxs_path: Path to the MRXS slide file
+            annotations: List of annotation dictionaries to classify
+            
+        Returns:
+            Updated list of annotations with classification information
+        """
         try:
             # Convert path to string if it's a Path object
             mrxs_path_str = str(mrxs_path)
@@ -490,7 +597,7 @@ class AutoClassifier:
                 # Update properties with classifications
                 updated_annotation["properties"]["classification"].update({
                     "tissue_type": tissue_type,
-                    "inflammation_status": inflammation_type  # Changed from inflammation_type for consistency
+                    "inflammation_status": inflammation_type
                 })
                 
                 # Add color if available
@@ -501,7 +608,7 @@ class AutoClassifier:
                 if tissue_probs and inflammation_probs:
                     updated_annotation["properties"]["classification"].update({
                         "tissue_probabilities": tissue_probs,
-                        "inflammation_status_probabilities": inflammation_probs  # Changed for consistency
+                        "inflammation_status_probabilities": inflammation_probs
                     })
                 
                 updated_annotations.append(updated_annotation)
