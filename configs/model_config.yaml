@@ -45,7 +45,7 @@ inflammation:
       learning_rate: 0.001 # "With a learning rate of 0.001"
       momentum: 0.9        # Standard SGD momentum
       weight_decay: 0.0    # Not mentioned in thesis
-    pos_weight: 0.7
+    pos_weight: 1
     scheduler:
       enabled: false       # "A learning rate scheduler was not employed"
     early_stopping:
@@ -269,7 +269,7 @@ tissue:
       learning_rate: 0.001     # "With a learning rate of 0.001 and a batch size of 64"
       momentum: 0.9            # "SGD with a momentum value set to 0.9"
       weight_decay: 0.0        # "Implementing... weight decay did not further reduce the validation loss"
-    pos_weight: 0.8
+    pos_weight: 1
     scheduler:
       enabled: false           # "Implementing... learning rate schedulers... did not further reduce the validation loss"
     early_stopping:
@@ -297,14 +297,14 @@ tissue:
       name: gigapath
       pretrained: true
       feature_extraction: true
-    batch_size: 32
-    dropout_rate: 0.3
+    batch_size: 48
+    dropout_rate: 0.23559098271006373
     epochs: 50
     optimizer:
       name: AdamW
-      learning_rate: 5e-4
-      weight_decay: 1e-5
-    pos_weight: 0.8
+      learning_rate: 0.0009327695894177215
+      weight_decay: 9.532219581535932e-05
+    pos_weight: 0.5513518235330156
     scheduler:
       enabled: true
       name: CosineAnnealingLR
@@ -332,13 +332,13 @@ tissue:
       pretrained: true
       feature_extraction: false
     batch_size: 64
-    dropout_rate: 0.08032651841331968
+    dropout_rate: 0.2007109001252564
     epochs: 50
     optimizer:
       name: AdamW
-      learning_rate: 0.0007554560492975331
-      weight_decay: 1.7518424648360045e-05
-    pos_weight: 0.693469462948584
+      learning_rate: 0.0004285120862999567
+      weight_decay: 0.00021304603401432276
+    pos_weight: 0.5509766118518091
     scheduler:
       enabled: true
       name: CosineAnnealingLR
@@ -365,14 +365,82 @@ tissue:
       name: swin_v2_b
       pretrained: true
       feature_extraction: false
-    batch_size: 32
-    dropout_rate: 0.2559392165832936
+    batch_size: 64
+    dropout_rate: 0.22445885530254048
     epochs: 50
     optimizer:
       name: AdamW
-      learning_rate: 0.00033357612275208674
-      weight_decay: 0.00030089865185583295
-    pos_weight: 0.658150880398308
+      learning_rate: 0.00043720321230670184
+      weight_decay: 4.600053260517991e-05
+    pos_weight: 0.7125368666699552
+    scheduler:
+      enabled: true
+      name: CosineAnnealingLR
+      T_max: 50
+    transforms:
+      training:
+        random_resized_crop:
+          size: 224
+          scale: [0.8, 1.0]
+        random_horizontal_flip: true
+        random_vertical_flip: true
+        color_jitter:
+          enabled: false
+        random_rotation: 
+          enabled: true
+          degrees: 180
+        random_blur:
+          enabled: false
+        random_affine:
+          enabled: false
+
+  densenet121:
+    architecture:
+      name: densenet121
+      pretrained: true
+      feature_extraction: false
+    batch_size: 64
+    dropout_rate: 0.0612284423470278
+    epochs: 50
+    optimizer:
+      name: AdamW
+      learning_rate: 0.00018943422706671847
+      weight_decay: 1.0775930465603428e-05
+    pos_weight: 0.654171439017536
+    scheduler:
+      enabled: true
+      name: CosineAnnealingLR
+      T_max: 50
+    transforms:
+      training:
+        random_resized_crop:
+          size: 224
+          scale: [0.8, 1.0]
+        random_horizontal_flip: true
+        random_vertical_flip: true
+        color_jitter:
+          enabled: false
+        random_rotation: 
+          enabled: true
+          degrees: 180
+        random_blur:
+          enabled: false
+        random_affine:
+          enabled: false
+
+  densenet169:
+    architecture:
+      name: densenet169
+      pretrained: true
+      feature_extraction: false
+    batch_size: 56
+    dropout_rate: 0.14995492705735047
+    epochs: 50
+    optimizer:
+      name: AdamW
+      learning_rate: 0.0001903232089874498
+      weight_decay: 0.0005858839659181131
+    pos_weight: 0.5703967916940276
     scheduler:
       enabled: true
       name: CosineAnnealingLR
