@@ -437,7 +437,7 @@ def train_model(args, paths):
             criterion=criterion,
             scaler=scaler,
             device=device,
-            use_amp=True,  # Can be made configurable
+            use_amp=True,
             deterministic=args.deterministic 
         )
         

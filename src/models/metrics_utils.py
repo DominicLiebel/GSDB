@@ -634,17 +634,9 @@ def optimize_aggregation_strategy(df: pd.DataFrame, task: str = 'inflammation',
     aggregation_strategies = {
         'mean': lambda x: np.mean(x),
         'median': lambda x: np.median(x),
-        # Remove strategies that use a single tile (too specific)
-        #'max': lambda x: np.max(x),
-        #'min': lambda x: np.min(x),
-        #'percentile_75': lambda x: np.percentile(x, 75),
-        #'percentile_90': lambda x: np.percentile(x, 90),
         'top_k_mean_10': lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.1)):]) if len(x) > 0 else 0,
         'top_k_mean_20': lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.2)):]) if len(x) > 0 else 0,
         'top_k_mean_30': lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.3)):]) if len(x) > 0 else 0,
-        'filter_90_mean': lambda x: np.mean(np.sort(x)[int(len(x)*0.9):]) if len(x) > 0 else 0,  # Filter bottom 90%, mean of top 10%
-        'filter_80_mean': lambda x: np.mean(np.sort(x)[int(len(x)*0.8):]) if len(x) > 0 else 0,  # Filter bottom 80%, mean of top 20%
-        'filter_70_mean': lambda x: np.mean(np.sort(x)[int(len(x)*0.7):]) if len(x) > 0 else 0,  # Filter bottom 70%, mean of top 30%
     }
     
     # Results dictionary to store metrics for each strategy
@@ -754,34 +746,54 @@ def optimize_aggregation_strategy(df: pd.DataFrame, task: str = 'inflammation',
         plt.figure(figsize=(14, 8))
         strategies = list(results.keys())
         
-        # Extract metrics
-        metrics_to_plot = {
-            'F1 Score': [results[s]['f1'] for s in strategies],
-            'Sensitivity': [results[s]['sensitivity'] for s in strategies],
-            'Specificity': [results[s]['specificity'] for s in strategies],
-            'Balanced Acc': [results[s]['balanced_acc'] for s in strategies],
-            'Accuracy': [results[s]['accuracy'] for s in strategies]  # Added accuracy to plot
-        }
+        # Define metrics to plot
+        metric_names = ['F1 Score', 'Sensitivity', 'Specificity', 'Balanced Acc', 'Accuracy']
+        metric_keys = ['f1', 'sensitivity', 'specificity', 'balanced_acc', 'accuracy']
+        
+        # Restructure data to group by metrics instead of strategies
+        strategies_to_plot = {}
+        for strategy in strategies:
+            strategies_to_plot[strategy] = [results[strategy][key] for key in metric_keys]
         
         # Plot as bar chart with grouped bars
-        x = np.arange(len(strategies))
-        width = 0.17  # Adjusted for 5 metrics
+        x = np.arange(len(metric_names))
+        width = 0.15  # Adjust based on number of strategies
+        if len(strategies) > 5:
+            width = 0.12
+        elif len(strategies) < 4:
+            width = 0.2
+            
         multiplier = 0
         
-        for metric_name, values in metrics_to_plot.items():
+        # Create color map to highlight best strategy
+        best_strategy_name = best_strategy[0]
+        colors = {}
+        for strategy in strategies:
+            if strategy == best_strategy_name:
+                colors[strategy] = 'darkred'  # Highlight the best strategy
+            else:
+                colors[strategy] = None  # Use default color cycle
+        
+        for strategy, values in strategies_to_plot.items():
             offset = width * multiplier
-            plt.bar(x + offset, values, width, label=metric_name)
+            plt.bar(x + offset, values, width, label=strategy, 
+                    color=colors[strategy], alpha=0.75 if strategy == best_strategy_name else 0.65)
             multiplier += 1
         
-        # Highlight best strategy with a vertical line
-        best_idx = strategies.index(best_strategy[0])
-        plt.axvline(x=best_idx, color='r', alpha=0.3, linestyle='--', 
-                   label=f'Best Strategy: {best_strategy[0]}')
-        
         plt.ylabel('Score')
-        plt.title(f'Metrics by Aggregation Strategy for {level.capitalize()} Level')
-        plt.xticks(x + width*2, strategies, rotation=45, ha='right')
-        plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=5)
+        plt.title(f'Aggregation Strategies by Metric for {level.capitalize()} Level')
+        plt.xticks(x + width*(len(strategies)-1)/2, metric_names, rotation=30, ha='right')
+        
+        # Add a star in the legend for the best strategy
+        if len(strategies) > 1:
+            plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), 
+                    ncol=min(5, len(strategies)),
+                    title=f"★ Best Strategy: {best_strategy_name} ★")
+        else:
+            plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15))
+        
+        # Add horizontal grid lines for better readability
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
         plt.tight_layout()
         
         # Save plot

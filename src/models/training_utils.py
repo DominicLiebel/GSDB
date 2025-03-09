@@ -112,6 +112,7 @@ def train_epoch(model: nn.Module,
             outputs = model(inputs).squeeze()
             loss = criterion(outputs, labels)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
         
         # Store predictions and labels for additional metrics
