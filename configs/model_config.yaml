@@ -76,13 +76,13 @@ inflammation:
       pretrained: true
       feature_extraction: false
     batch_size: 32
-    dropout_rate: 0.2
-    epochs: 30
+    dropout_rate: 0.16141698206729396
+    epochs: 50
     optimizer:
       name: AdamW
-      learning_rate: 1e-4
-      weight_decay: 1e-5
-    pos_weight: 0.7
+      learning_rate: 0.0001776588643563922
+      weight_decay: 3.43776260302271e-05
+    pos_weight: 0.4129621502243413
     scheduler:
       enabled: true
       name: CosineAnnealingLR
@@ -114,14 +114,14 @@ inflammation:
       name: densenet169
       pretrained: true
       feature_extraction: false
-    batch_size: 24
-    dropout_rate: 0.3
-    epochs: 30
+    batch_size: 64
+    dropout_rate: 0.2279982747102781
+    epochs: 50
     optimizer:
       name: AdamW
-      learning_rate: 5e-5
-      weight_decay: 1e-5
-    pos_weight: 0.7
+      learning_rate: 0.00018598867620316553
+      weight_decay: 0.00014621550781008749
+    pos_weight: 0.4171650060999368
     scheduler:
       enabled: true
       name: CosineAnnealingLR
@@ -153,14 +153,14 @@ inflammation:
       name: gigapath
       pretrained: true
       feature_extraction: true
-    batch_size: 32
-    dropout_rate: 0.3
+    batch_size: 64
+    dropout_rate: 0.2081275310582518
     epochs: 50
     optimizer:
       name: AdamW
-      learning_rate: 5e-4
-      weight_decay: 1e-5
-    pos_weight: 0.7
+      learning_rate: 0.0009145189579997262
+      weight_decay: 0.0002035289719150956
+    pos_weight: 0.46488177740040443
     scheduler:
       enabled: true
       name: CosineAnnealingLR
@@ -188,14 +188,14 @@ inflammation:
       name: convnext_large
       pretrained: true
       feature_extraction: false
-    batch_size: 32
-    dropout_rate: 0.4
+    batch_size: 64
+    dropout_rate: 0.048859358804960035
     epochs: 50
     optimizer:
       name: AdamW
-      learning_rate: 3e-5
-      weight_decay: 8e-6
-    pos_weight: 0.7
+      learning_rate: 0.00041168483134304085
+      weight_decay: 8.026928361624194e-05
+    pos_weight: 0.571784214645483
     scheduler:
       enabled: true
       name: CosineAnnealingLR
@@ -223,14 +223,14 @@ inflammation:
       name: swin_v2_b
       pretrained: true
       feature_extraction: false
-    batch_size: 32
-    dropout_rate: 0.35
+    batch_size: 96
+    dropout_rate: 0.28618971590868336
     epochs: 50
     optimizer:
       name: AdamW
-      learning_rate: 5e-5
-      weight_decay: 1e-5
-    pos_weight: 0.7
+      learning_rate: 0.0003887159105644
+      weight_decay: 5.240314640039309e-05
+    pos_weight: 0.5738321900192714
     scheduler:
       enabled: true
       name: CosineAnnealingLR

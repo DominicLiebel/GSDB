@@ -1,0 +1,17 @@
+2025-03-10 12:19:18,354 - INFO - Log file: /mnt/data/dliebel/2024_dliebel/logs/train_all_inflammation_20250310_121918.log
+2025-03-10 12:19:18,355 - INFO - Starting processing for inflammation task
+2025-03-10 12:19:18,355 - INFO - Project root: /mnt/data/dliebel/2024_dliebel
+2025-03-10 12:19:18,355 - INFO - Models directory: /mnt/data/dliebel/2024_dliebel/results/models
+2025-03-10 12:19:18,355 - INFO - Evaluations directory: /mnt/data/dliebel/2024_dliebel/results/evaluations
+2025-03-10 12:19:18,355 - INFO - Argument task: inflammation
+2025-03-10 12:19:18,355 - INFO - Argument seed: 42
+2025-03-10 12:19:18,355 - INFO - Argument deterministic: True
+2025-03-10 12:19:18,355 - INFO - Argument config_path: /mnt/data/dliebel/2024_dliebel/configs/model_config.yaml
+2025-03-10 12:19:18,356 - INFO - Argument skip_training: False
+2025-03-10 12:19:18,356 - INFO - Argument skip_evaluation: False
+2025-03-10 12:19:18,356 - INFO - Argument project_root: /mnt/data/dliebel
+2025-03-10 12:19:18,356 - INFO - Loading configurations from /mnt/data/dliebel/2024_dliebel/configs/model_config.yaml
+2025-03-10 12:19:18,396 - INFO - Found 6 models for inflammation task: ['resnet18', 'densenet121', 'densenet169', 'gigapath', 'convnext_large', 'swin_v2_b']
+2025-03-10 12:19:18,396 - INFO - Model resnet18 not found at /mnt/data/dliebel/2024_dliebel/results/models/best_model_inflammation_resnet18.pt. Starting training.
+2025-03-10 12:19:18,396 - INFO - Training inflammation model: resnet18
+2025-03-10 12:19:18,396 - INFO - Running: python /mnt/data/dliebel/2024_dliebel/src/models/train.py --task inflammation --model resnet18 --seed 42 --deterministic
