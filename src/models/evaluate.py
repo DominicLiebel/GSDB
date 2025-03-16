@@ -5,7 +5,7 @@ This module provides functionality for evaluating trained histological image cla
 at multiple hierarchical levels (tile, particle, and WSI).
 
 Usage:
-    python evaluate.py --task <inflammation|tissue> --test_split <test|test_scanner2> --model_path
+    python evaluate.py --task <inflammation|tissue> --test_split <val|test|test_scanner2> --model_path
 """
 
 import argparse
@@ -539,8 +539,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--test_split',
         required=True,
-        choices=['test', 'test_scanner2'],
-        help='Test split to evaluate'
+        choices=['val', 'test', 'test_scanner2'],
+        help='Dataset split to evaluate (val, test, or test_scanner2)'
     )
     parser.add_argument(
         '--model_path',
@@ -581,6 +581,36 @@ def parse_args() -> argparse.Namespace:
         '--deterministic',
         action='store_true',
         help='Enable deterministic mode for reproducibility'
+    )
+    
+    # Implementation details
+    parser.add_argument(
+        '--epochs',
+        type=int,
+        default=50,
+        help='Number of training epochs'
+    )
+    parser.add_argument(
+        '--optimizer',
+        type=str,
+        default='AdamW',
+        help='Optimizer used for training'
+    )
+    parser.add_argument(
+        '--learning-rate',
+        type=float,
+        help='Learning rate used for training'
+    )
+    parser.add_argument(
+        '--batch-size',
+        type=int,
+        default=32,
+        help='Batch size used for training'
+    )
+    parser.add_argument(
+        '--pos-class-weight',
+        type=float,
+        help='Positive class weight used for training'
     )
     
     # Add path arguments
@@ -760,14 +790,67 @@ def main():
     else:
         paths["RESULTS_DIR"] = paths["BASE_DIR"] / "results"
     
-    # Create evaluation directory
+    # Load model configuration if available
+    config = {}
+    config_file = Path('/mnt/data/dliebel/2024_dliebel/configs/model_config.yaml')
+    if config_file.exists():
+        import yaml
+        try:
+            with open(config_file, 'r') as f:
+                config = yaml.safe_load(f)
+            logging.info(f"Loaded configuration from {config_file}")
+        except Exception as e:
+            logging.warning(f"Failed to load config file: {e}")
+    
+    # Extract implementation details from config if not provided as arguments
+    if config and args.task in config and args.architecture in config[args.task]:
+        model_config = config[args.task][args.architecture]
+        
+        # Only use config values if command line args weren't provided
+        if args.learning_rate is None and 'optimizer' in model_config:
+            args.learning_rate = model_config['optimizer'].get('learning_rate')
+            logging.info(f"Using learning rate from config: {args.learning_rate}")
+            
+        if args.batch_size is None:
+            args.batch_size = model_config.get('batch_size')
+            logging.info(f"Using batch size from config: {args.batch_size}")
+            
+        if args.pos_class_weight is None:
+            args.pos_class_weight = model_config.get('pos_weight')
+            logging.info(f"Using positive class weight from config: {args.pos_class_weight}")
+            
+        if args.epochs is None:
+            args.epochs = model_config.get('epochs')
+            logging.info(f"Using epochs from config: {args.epochs}")
+            
+        if args.optimizer is None and 'optimizer' in model_config:
+            args.optimizer = model_config['optimizer'].get('name')
+            logging.info(f"Using optimizer from config: {args.optimizer}")
+    
+    # Map test_split to scanner name for directory naming
+    scanner_name = {
+        'val': 'validation',
+        'test': 'scanner1',
+        'test_scanner2': 'scanner2'
+    }.get(args.test_split, args.test_split)
+    
+    # Create evaluation directory with new naming convention
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = paths["RESULTS_DIR"] / "evaluations" / f'{args.task}_{args.test_split}_{timestamp}'
+    output_dir = paths["RESULTS_DIR"] / "evaluations" / f'{args.task}_{scanner_name}_{args.architecture}_{timestamp}'
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Setup logging
     setup_logging(output_dir)
-    logging.info(f"Starting evaluation for {args.task} task on {args.test_split} split")
+    logging.info(f"Starting evaluation for {args.task} task on {args.test_split} split with {args.architecture} model")
+    
+    # Log implementation details that will be used
+    logging.info(f"Implementation details:")
+    logging.info(f"  Architecture: {args.architecture}")
+    logging.info(f"  Epochs: {args.epochs}")
+    logging.info(f"  Optimizer: {args.optimizer}")
+    logging.info(f"  Learning Rate: {args.learning_rate}")
+    logging.info(f"  Batch Size: {args.batch_size}")
+    logging.info(f"  Positive Class Weight: {args.pos_class_weight}")
     
     # Set random seeds for reproducibility
     # Import here to avoid circular imports
@@ -829,7 +912,7 @@ def main():
         # Now evaluate on test data using validation-optimized thresholds
         logging.info(f"Evaluating on {args.test_split} using validation-optimized thresholds...")
         
-        # Create dataset and dataloader for test data
+        # Create dataset and dataloader for evaluation data
         dataset = HistologyDataset(
             split=args.test_split,
             transform=get_transforms(is_training=False),
@@ -855,6 +938,15 @@ def main():
             output_dir=output_dir,
             validation_thresholds=validation_thresholds  # Always provide validation thresholds
         )
+        
+        # Add implementation details to metrics
+        metrics["implementation_details"] = {
+            "epochs": args.epochs,
+            "optimizer": args.optimizer,
+            "learning_rate": args.learning_rate,
+            "batch_size": args.batch_size,
+            "pos_class_weight": args.pos_class_weight
+        }
         
         # Save metrics using metrics_utils
         # This will save both statistics.json and predictions.csv

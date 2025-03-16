@@ -4,12 +4,15 @@ Train and evaluate all models for a specified task (inflammation or tissue).
 
 This script:
 1. Trains all models defined in the config file for the specified task
-2. Evaluates each trained model on both test splits (test, test_scanner2)
+2. Evaluates each trained model on specified dataset split(s)
 3. Skips models that have already been trained or evaluated
 
 Usage:
     python train_evaluate_all.py --task inflammation
     python train_evaluate_all.py --task tissue --deterministic --seed 42
+    python train_evaluate_all.py --task inflammation --eval-dataset val
+    python train_evaluate_all.py --task inflammation --eval-dataset test_scanner2
+    python train_evaluate_all.py --task inflammation --eval-dataset all
 """
 
 import argparse
@@ -41,6 +44,9 @@ def parse_args():
                         help="Skip evaluation and only run training")
     parser.add_argument("--project-root", type=Path, default=Path.cwd(),
                         help="Project root directory")
+    parser.add_argument("--eval-dataset", choices=["val", "test", "test_scanner2", "all"], 
+                        default="test",
+                        help="Dataset to use for evaluation (default: test)")
     return parser.parse_args()
 
 def setup_logging(task, log_dir):
@@ -84,10 +90,10 @@ def check_model_trained(model_path):
     """Check if a model has already been trained by looking for the model file."""
     return model_path.exists()
 
-def check_evaluation_exists(eval_dir, task, model_name, test_split):
-    """Check if evaluation results already exist for a model on a test split."""
-    # Look for directories matching the pattern "task_test_split_*"
-    pattern = f"{task}_{test_split}_*"
+def check_evaluation_exists(eval_dir, task, model_name, dataset_split):
+    """Check if evaluation results already exist for a model on a dataset split."""
+    # Look for directories matching the pattern "task_dataset_split_*"
+    pattern = f"{task}_{dataset_split}_*"
     eval_dirs = list(eval_dir.glob(pattern))
     
     for eval_path in eval_dirs:
@@ -101,7 +107,7 @@ def check_evaluation_exists(eval_dir, task, model_name, test_split):
                 with open(stats_file, 'r') as f:
                     stats = json.load(f)
                     if stats.get('model_name') == model_name:
-                        logging.info(f"Found existing evaluation for {model_name} on {test_split} at {eval_path}")
+                        logging.info(f"Found existing evaluation for {model_name} on {dataset_split} at {eval_path}")
                         return True
             except Exception as e:
                 logging.warning(f"Error checking statistics file {stats_file}: {e}")
@@ -168,12 +174,12 @@ def train_model(project_root, task, model_name, seed, deterministic):
     # Training can take a long time, so no timeout
     return run_command(cmd, f"Training {task} model: {model_name}")
 
-def evaluate_model(project_root, task, model_path, test_split, architecture, deterministic):
+def evaluate_model(project_root, task, model_path, dataset_split, architecture, deterministic):
     """Evaluate a model using evaluate.py."""
     cmd = [
         "python", str(project_root / "src" / "models" / "evaluate.py"),
         "--task", task,
-        "--test_split", test_split,
+        "--test_split", dataset_split,
         "--model_path", str(model_path),
         "--architecture", architecture
     ]
@@ -184,7 +190,7 @@ def evaluate_model(project_root, task, model_path, test_split, architecture, det
     # Set a reasonable timeout for evaluation (3 hours)
     return run_command(
         cmd, 
-        f"Evaluating {task} model {architecture} on {test_split}",
+        f"Evaluating {task} model {architecture} on {dataset_split}",
         timeout=10800
     )
 
@@ -244,10 +250,14 @@ def main():
     
     # Track successfully processed models
     trained_models = []
-    evaluated_models = {
-        "test": [],
-        "test_scanner2": []
-    }
+    
+    # Determine which dataset splits to evaluate
+    if args.eval_dataset == "all":
+        evaluation_splits = ["validation", "test", "test_scanner2"]
+    else:
+        evaluation_splits = [args.eval_dataset]
+    
+    evaluated_models = {split: [] for split in evaluation_splits}
     
     # Process each model
     for model_name in models:
@@ -279,18 +289,18 @@ def main():
                 logging.error(f"Model file {model_path} not found. Skipping evaluation.")
                 continue
                 
-            # Evaluate model on both test splits
-            for test_split in ["test", "test_scanner2"]:
-                if check_evaluation_exists(eval_dir, args.task, model_name, test_split):
-                    logging.info(f"Evaluation for {model_name} on {test_split} already exists. Skipping.")
-                    evaluated_models[test_split].append(model_name)
+            # Evaluate model on each selected dataset split
+            for dataset_split in evaluation_splits:
+                if check_evaluation_exists(eval_dir, args.task, model_name, dataset_split):
+                    logging.info(f"Evaluation for {model_name} on {dataset_split} already exists. Skipping.")
+                    evaluated_models[dataset_split].append(model_name)
                 else:
-                    logging.info(f"Starting evaluation of {model_name} on {test_split}")
-                    if evaluate_model(project_root, args.task, model_path, test_split, model_name, args.deterministic):
-                        logging.info(f"Successfully evaluated {model_name} on {test_split}")
-                        evaluated_models[test_split].append(model_name)
+                    logging.info(f"Starting evaluation of {model_name} on {dataset_split}")
+                    if evaluate_model(project_root, args.task, model_path, dataset_split, model_name, args.deterministic):
+                        logging.info(f"Successfully evaluated {model_name} on {dataset_split}")
+                        evaluated_models[dataset_split].append(model_name)
                     else:
-                        logging.error(f"Failed to evaluate {model_name} on {test_split}")
+                        logging.error(f"Failed to evaluate {model_name} on {dataset_split}")
         else:
             logging.info(f"Skipping evaluation for model {model_name} as requested")
     
@@ -300,8 +310,8 @@ def main():
     logging.info(f"\nSummary for {args.task} task:")
     logging.info(f"Models successfully trained ({len(trained_models)}): {', '.join(trained_models)}")
     
-    for test_split, models_list in evaluated_models.items():
-        logging.info(f"Models evaluated on {test_split} ({len(models_list)}): {', '.join(models_list)}")
+    for dataset_split, models_list in evaluated_models.items():
+        logging.info(f"Models evaluated on {dataset_split} ({len(models_list)}): {', '.join(models_list)}")
     
     # List models that failed or were skipped
     all_models_set = set(models)
@@ -313,11 +323,11 @@ def main():
             logging.warning(f"Models that failed training or were skipped: {', '.join(failed_training)}")
     
     if not args.skip_evaluation:
-        for test_split, models_list in evaluated_models.items():
+        for dataset_split, models_list in evaluated_models.items():
             evaluated_set = set(models_list)
             failed_evaluation = trained_set - evaluated_set
             if failed_evaluation:
-                logging.warning(f"Models that failed evaluation on {test_split} or were skipped: {', '.join(failed_evaluation)}")
+                logging.warning(f"Models that failed evaluation on {dataset_split} or were skipped: {', '.join(failed_evaluation)}")
 
 if __name__ == "__main__":
     main()

@@ -1207,10 +1207,12 @@ def create_summary_file(metrics: Dict, output_dir: Path):
         f.write(f"Split: {metrics.get('split', 'Unknown')}\n")
         f.write(f"Model: {metrics.get('model_name', 'Unknown')}\n")
         f.write(f"Total Samples: {metrics.get('total_samples', 0)}\n")
-        f.write(f"Threshold: {metrics.get('threshold', 0.5):.3f}\n\n")
+        # Remove the confusing threshold line
+        
+        # === TEST DATASET METRICS ===
         
         # Always include tile-level metrics
-        f.write("TEST DATASET - TILE LEVEL METRICS\n")
+        f.write("\nTEST DATASET - TILE LEVEL METRICS\n")
         f.write("-" * 35 + "\n")
         metric_types = ['accuracy', 'sensitivity', 'specificity', 'f1', 'auroc']
         for metric in metric_types:
@@ -1243,10 +1245,12 @@ def create_summary_file(metrics: Dict, output_dir: Path):
                     if isinstance(value, (int, float)):
                         f.write(f"{metric.capitalize():10s}: {value:.2%}\n")
         
+        # === VALIDATION OPTIMIZED THRESHOLDS ===
+        f.write("\nVALIDATION-OPTIMIZED THRESHOLDS\n")
+        f.write("-" * 30 + "\n")
+        
         # Include optimal threshold information if available
         if 'optimal_thresholds' in metrics:
-            f.write("\nVALIDATION-OPTIMIZED THRESHOLDS\n")
-            f.write("-" * 30 + "\n")
             for level, level_metrics in metrics['optimal_thresholds'].items():
                 f.write(f"{level.capitalize()} level: {level_metrics.get('threshold', 0.5):.3f}\n")
                 f.write(f"  Sensitivity: {level_metrics.get('sensitivity', 0):.2%}\n")
@@ -1254,7 +1258,7 @@ def create_summary_file(metrics: Dict, output_dir: Path):
                 f.write(f"  F1 Score: {level_metrics.get('f1', 0):.2%}\n")
                 f.write("\n")
         
-        # Include optimal aggregation strategy if available
+        # === OPTIMAL AGGREGATION STRATEGY ===
         if 'optimal_aggregation' in metrics:
             agg = metrics['optimal_aggregation']
             f.write("\nOPTIMAL AGGREGATION STRATEGY\n")
@@ -1268,6 +1272,7 @@ def create_summary_file(metrics: Dict, output_dir: Path):
             f.write(f"F1 Score: {best_metrics.get('f1', 0):.2%}\n")
             f.write(f"Balanced Accuracy: {best_metrics.get('balanced_acc', 0):.2%}\n")
             
+            # === VALIDATION DATASET CONFUSION MATRIX ===
             if 'validation_confusion_matrix' in agg:
                 f.write("\nVALIDATION DATASET CONFUSION MATRIX (Optimized on this data):\n")
                 f.write("-" * 55 + "\n")
@@ -1277,6 +1282,7 @@ def create_summary_file(metrics: Dict, output_dir: Path):
                 f.write(f"  False Negatives: {agg['validation_confusion_matrix'].get('fn', 0)}\n")
                 f.write(f"  Total Samples: {agg['validation_confusion_matrix'].get('total', 0)}\n")
             
+            # === TEST DATASET CONFUSION MATRIX ===
             if 'test_confusion_matrix' in agg:
                 f.write("\nTEST DATASET CONFUSION MATRIX (Using validation-optimized strategy):\n")
                 f.write("-" * 60 + "\n")
@@ -1287,27 +1293,125 @@ def create_summary_file(metrics: Dict, output_dir: Path):
                 f.write(f"  Total Samples: {agg['test_confusion_matrix'].get('total', 0)}\n")
                 f.write(f"  Accuracy: {agg['test_confusion_matrix'].get('accuracy', 0):.2%}\n")
                 f.write(f"  F1 Score: {agg['test_confusion_matrix'].get('f1', 0):.2%}\n")
-
-        # Include validation information if present
-        if 'metrics_validated' in metrics and metrics['metrics_validated']:
-            f.write("\nVALIDATION INFORMATION\n")
-            f.write("-" * 23 + "\n")
-            f.write(f"Validation timestamp: {metrics.get('validation_timestamp', 'unknown')}\n")
+        
+        # === EXTENDED METRICS SUMMARY (FOR TABLES) ===
+        f.write("\n\nEXTENDED METRICS FOR TABLE FORMATTING\n")
+        f.write("===================================\n\n")
+        
+        # === VALIDATION PERFORMANCE ===
+        f.write("VALIDATION PERFORMANCE\n")
+        f.write("-" * 25 + "\n")
+        
+        # For validation data, use the optimization thresholds metrics
+        if metrics.get('task') == 'inflammation':
+            # Inflammation Task - Tile level
+            if 'tile' in metrics.get('optimal_thresholds', {}):
+                tile_metrics = metrics['optimal_thresholds']['tile']
+                f.write(f"Tile-Level Accuracy: {tile_metrics.get('accuracy', 0):.2%}\n")
+                f.write(f"Tile-Level Sensitivity: {tile_metrics.get('sensitivity', 0):.2%}\n")
+                f.write(f"Tile-Level Specificity: {tile_metrics.get('specificity', 0):.2%}\n")
+                f.write(f"Tile-Level F1 Score: {tile_metrics.get('f1', 0):.2%}\n")
+                
+                # Get AUC from validation data if available
+                val_auroc = metrics.get('validation_tile_auroc', metrics.get('tile_auroc', 0))
+                f.write(f"Tile-Level AUC: {val_auroc:.2%}\n")
             
-            # Report any corrections made
-            corrections_found = False
-            for level in ['tile', 'slide', 'particle']:
-                correction_key = f'{level}_metrics_corrected'
-                if correction_key in metrics and metrics[correction_key]:
-                    if not corrections_found:
-                        f.write("\nMetrics corrected for consistency:\n")
-                        corrections_found = True
-                    
-                    f.write(f"  {level.capitalize()} level: ")
-                    f.write(f"accuracy adjusted from {metrics.get(f'{level}_original_accuracy', 0):.4f} to 1.0000\n")
+            # Inflammation Task - Slide level
+            if 'slide' in metrics.get('optimal_thresholds', {}):
+                slide_metrics = metrics['optimal_thresholds']['slide']
+                f.write(f"Slide-Level Accuracy: {slide_metrics.get('accuracy', 0):.2%}\n")
+                f.write(f"Slide-Level Sensitivity: {slide_metrics.get('sensitivity', 0):.2%}\n")
+                f.write(f"Slide-Level Specificity: {slide_metrics.get('specificity', 0):.2%}\n")
+                f.write(f"Slide-Level F1 Score: {slide_metrics.get('f1', 0):.2%}\n")
+                
+                # Get AUC from validation data if available
+                val_auroc = metrics.get('validation_slide_auroc', metrics.get('slide_auroc', 0))
+                f.write(f"Slide-Level AUC: {val_auroc:.2%}\n")
+                
+        else:  # Tissue Task
+            # Tissue Task - Tile level
+            if 'tile' in metrics.get('optimal_thresholds', {}):
+                tile_metrics = metrics['optimal_thresholds']['tile']
+                f.write(f"Tile-Level Accuracy: {tile_metrics.get('accuracy', 0):.2%}\n")
+                f.write(f"Tile-Level Sensitivity: {tile_metrics.get('sensitivity', 0):.2%}\n")
+                f.write(f"Tile-Level Specificity: {tile_metrics.get('specificity', 0):.2%}\n")
+                f.write(f"Tile-Level F1 Score: {tile_metrics.get('f1', 0):.2%}\n")
+                
+                # Get AUC from validation data if available
+                val_auroc = metrics.get('validation_tile_auroc', metrics.get('tile_auroc', 0))
+                f.write(f"Tile-Level AUC: {val_auroc:.2%}\n")
             
-            if not corrections_found:
-                f.write("No inconsistencies detected in metrics.\n")
+            # Tissue Task - Particle level
+            if 'particle' in metrics.get('optimal_thresholds', {}):
+                particle_metrics = metrics['optimal_thresholds']['particle']
+                f.write(f"Particle-Level Accuracy: {particle_metrics.get('accuracy', 0):.2%}\n")
+                f.write(f"Particle-Level Sensitivity: {particle_metrics.get('sensitivity', 0):.2%}\n")
+                f.write(f"Particle-Level Specificity: {particle_metrics.get('specificity', 0):.2%}\n")
+                f.write(f"Particle-Level F1 Score: {particle_metrics.get('f1', 0):.2%}\n")
+                
+                # Get AUC from validation data if available
+                val_auroc = metrics.get('validation_particle_auroc', metrics.get('particle_auroc', 0))
+                f.write(f"Particle-Level AUC: {val_auroc:.2%}\n")
+        
+        # === TEST PERFORMANCE ===
+        f.write("\nTEST PERFORMANCE\n")
+        f.write("-" * 20 + "\n")
+        
+        if metrics.get('task') == 'inflammation':
+            # Inflammation Task - Tile level
+            f.write(f"Tile-Level Accuracy: {metrics.get('tile_accuracy', 0):.2%}\n")
+            f.write(f"Tile-Level Sensitivity: {metrics.get('tile_sensitivity', 0):.2%}\n")
+            f.write(f"Tile-Level Specificity: {metrics.get('tile_specificity', 0):.2%}\n")
+            f.write(f"Tile-Level F1 Score: {metrics.get('tile_f1', 0):.2%}\n")
+            f.write(f"Tile-Level AUC: {metrics.get('tile_auroc', 0):.2%}\n")
+            
+            # Inflammation Task - Slide level
+            f.write(f"Slide-Level Accuracy: {metrics.get('slide_accuracy', 0):.2%}\n")
+            f.write(f"Slide-Level Sensitivity: {metrics.get('slide_sensitivity', 0):.2%}\n")
+            f.write(f"Slide-Level Specificity: {metrics.get('slide_specificity', 0):.2%}\n")
+            f.write(f"Slide-Level F1 Score: {metrics.get('slide_f1', 0):.2%}\n")
+            f.write(f"Slide-Level AUC: {metrics.get('slide_auroc', 0):.2%}\n")
+            
+        else:  # Tissue Task
+            # Tissue Task - Tile level
+            f.write(f"Tile-Level Accuracy: {metrics.get('tile_accuracy', 0):.2%}\n")
+            f.write(f"Tile-Level Sensitivity: {metrics.get('tile_sensitivity', 0):.2%}\n")
+            f.write(f"Tile-Level Specificity: {metrics.get('tile_specificity', 0):.2%}\n")
+            f.write(f"Tile-Level F1 Score: {metrics.get('tile_f1', 0):.2%}\n")
+            f.write(f"Tile-Level AUC: {metrics.get('tile_auroc', 0):.2%}\n")
+            
+            # Tissue Task - Particle level
+            f.write(f"Particle-Level Accuracy: {metrics.get('particle_accuracy', 0):.2%}\n")
+            f.write(f"Particle-Level Sensitivity: {metrics.get('particle_sensitivity', 0):.2%}\n")
+            f.write(f"Particle-Level Specificity: {metrics.get('particle_specificity', 0):.2%}\n")
+            f.write(f"Particle-Level F1 Score: {metrics.get('particle_f1', 0):.2%}\n")
+            f.write(f"Particle-Level AUC: {metrics.get('particle_auroc', 0):.2%}\n")
+        
+        # === AGGREGATION RESULTS ===
+        f.write("\nAGGREGATION RESULTS (TEST)\n")
+        f.write("-" * 25 + "\n")
+        
+        if 'optimal_aggregation' in metrics:
+            agg = metrics['optimal_aggregation']
+            best_metrics = agg.get('best_metrics', {})
+            test_cm = agg.get('test_confusion_matrix', {})
+            
+            f.write(f"Optimal Strategy: {agg.get('best_strategy', 'unknown')}\n")
+            f.write(f"Accuracy: {test_cm.get('accuracy', best_metrics.get('accuracy', 0)):.2%}\n")
+            f.write(f"Sensitivity: {test_cm.get('sensitivity', best_metrics.get('sensitivity', 0)):.2%}\n")
+            f.write(f"Specificity: {test_cm.get('specificity', best_metrics.get('specificity', 0)):.2%}\n")
+            f.write(f"F1 Score: {test_cm.get('f1', best_metrics.get('f1', 0)):.2%}\n")
+        
+        # === IMPLEMENTATION DETAILS ===
+        f.write("\nIMPLEMENTATION DETAILS\n")
+        f.write("-" * 23 + "\n")
+        
+        impl_details = metrics.get('implementation_details', {})
+        f.write(f"Epochs: {impl_details.get('epochs', 'unknown')}\n")
+        f.write(f"Optimizer: {impl_details.get('optimizer', 'unknown')}\n")
+        f.write(f"Learning Rate: {impl_details.get('learning_rate', 'unknown')}\n")
+        f.write(f"Batch Size: {impl_details.get('batch_size', 'unknown')}\n")
+        f.write(f"Positive Class Weight: {impl_details.get('pos_class_weight', 'unknown')}\n")
                 
     logging.info(f"Created summary file at: {summary_file}")
     return summary_file
