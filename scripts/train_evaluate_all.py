@@ -10,7 +10,6 @@ This script:
 Usage:
     python train_evaluate_all.py --task inflammation
     python train_evaluate_all.py --task tissue --deterministic --seed 42
-    python train_evaluate_all.py --task inflammation --eval-dataset val
     python train_evaluate_all.py --task inflammation --eval-dataset test_scanner2
     python train_evaluate_all.py --task inflammation --eval-dataset all
 """
@@ -44,7 +43,7 @@ def parse_args():
                         help="Skip evaluation and only run training")
     parser.add_argument("--project-root", type=Path, default=Path.cwd(),
                         help="Project root directory")
-    parser.add_argument("--eval-dataset", choices=["val", "test", "test_scanner2", "all"], 
+    parser.add_argument("--eval-dataset", choices=["test", "test_scanner2", "all"], 
                         default="test",
                         help="Dataset to use for evaluation (default: test)")
     return parser.parse_args()

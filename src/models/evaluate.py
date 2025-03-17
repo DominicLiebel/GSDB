@@ -639,84 +639,6 @@ def parse_args() -> argparse.Namespace:
     
     return parser.parse_args()
 
-def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path) -> None:
-    """Plot ROC curves for different hierarchical levels.
-    
-    Args:
-        df: DataFrame with predictions
-        task: Classification task
-        output_dir: Directory to save plots
-    """
-    from sklearn.metrics import roc_curve, auc
-    
-    # Ensure output directory exists
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Convert logits to probabilities
-    if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
-        probs = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
-    else:
-        probs = df['raw_pred'].values
-    
-    # Calculate ROC curve for tile level
-    tile_fpr, tile_tpr, _ = roc_curve(df['label'], probs)
-    tile_auc = auc(tile_fpr, tile_tpr)
-    
-    # Calculate ROC curve for slide/particle level
-    if task == 'inflammation':
-        slide_df = df.groupby('slide_name').agg({
-            'raw_pred': 'mean',
-            'label': 'first'
-        }).reset_index()
-        
-        if 'raw_pred' in slide_df.columns and (slide_df['raw_pred'].min() < 0 or slide_df['raw_pred'].max() > 1):
-            slide_probs = torch.sigmoid(torch.tensor(slide_df['raw_pred'].values)).numpy()
-        else:
-            slide_probs = slide_df['raw_pred'].values
-        
-        slide_fpr, slide_tpr, _ = roc_curve(slide_df['label'], slide_probs)
-        slide_auc = auc(slide_fpr, slide_tpr)
-        
-        # Plot ROC curves
-        plt.figure(figsize=(10, 8))
-        plt.plot(tile_fpr, tile_tpr, label=f'Tile-level (AUC = {tile_auc:.3f})')
-        plt.plot(slide_fpr, slide_tpr, label=f'Slide-level (AUC = {slide_auc:.3f})')
-        plt.plot([0, 1], [0, 1], 'k--')
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title('ROC Curves for Different Hierarchical Levels')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        plt.savefig(output_dir / 'roc_curves.png', dpi=300)
-        plt.close()
-    
-    else:  # tissue task
-        particle_df = df.groupby(['slide_name', 'particle_id']).agg({
-            'raw_pred': 'mean',
-            'label': 'first'
-        }).reset_index()
-        
-        if 'raw_pred' in particle_df.columns and (particle_df['raw_pred'].min() < 0 or particle_df['raw_pred'].max() > 1):
-            particle_probs = torch.sigmoid(torch.tensor(particle_df['raw_pred'].values)).numpy()
-        else:
-            particle_probs = particle_df['raw_pred'].values
-        
-        particle_fpr, particle_tpr, _ = roc_curve(particle_df['label'], particle_probs)
-        particle_auc = auc(particle_fpr, particle_tpr)
-        
-        # Plot ROC curves
-        plt.figure(figsize=(10, 8))
-        plt.plot(tile_fpr, tile_tpr, label=f'Tile-level (AUC = {tile_auc:.3f})')
-        plt.plot(particle_fpr, particle_tpr, label=f'Particle-level (AUC = {particle_auc:.3f})')
-        plt.plot([0, 1], [0, 1], 'k--')
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title('ROC Curves for Different Hierarchical Levels')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        plt.savefig(output_dir / 'roc_curves.png', dpi=300)
-        plt.close()
-
 def plot_precision_recall_curve(df: pd.DataFrame, task: str, output_dir: Path) -> None:
     """Plot precision-recall curves for different hierarchical levels.
     
@@ -844,13 +766,16 @@ def main():
             args.epochs = model_config.get('epochs')
             logging.info(f"Using epochs from config: {args.epochs}")
             
-        if args.optimizer is None and 'optimizer' in model_config:
-            args.optimizer = model_config['optimizer'].get('name')
-            logging.info(f"Using optimizer from config: {args.optimizer}")
+        if args.optimizer is None:
+            if args.architecture == 'resnet18':
+                args.optimizer = 'SGD'
+                logging.info(f"Using default SGD optimizer for ResNet18")
+            else:
+                args.optimizer = 'AdamW'  # Default for other architectures
+                logging.info(f"Using default AdamW optimizer")
     
     # Map test_split to scanner name for directory naming
     scanner_name = {
-        'val': 'validation',
         'test': 'scanner1',
         'test_scanner2': 'scanner2'
     }.get(args.test_split, args.test_split)
@@ -976,10 +901,16 @@ def main():
         # Create ROC curves and precision-recall curves
         if 'predictions_df' in metrics:
             df = metrics['predictions_df']
-            plot_roc_curves(df, args.task, output_dir)
+            # Use the metrics_utils version and pass the optimal aggregation
+            metrics_utils.plot_roc_curves(
+                df, 
+                args.task, 
+                output_dir,
+                metrics.get('optimal_aggregation', None)
+            )
         else:
             logging.warning("Could not find predictions DataFrame in metrics. Skipping ROC curve generation.")
-        
+            
         # Create precision-recall curves
         if 'predictions_df' in metrics:
             try:

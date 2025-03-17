@@ -940,13 +940,14 @@ def save_metrics(metrics: Dict, output_dir: Path) -> None:
     # Create human-readable summary
     create_summary_file(metrics, output_dir)
 
-def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path) -> None:
-    """Plot ROC curves for different hierarchical levels.
+def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path, optimal_aggregation: Optional[Dict] = None) -> None:
+    """Plot ROC curves for different hierarchical levels using optimal aggregation strategy.
     
     Args:
         df: DataFrame with predictions
         task: Classification task
         output_dir: Directory to save plots
+        optimal_aggregation: Optional dictionary with optimal aggregation strategy
     """
     from sklearn.metrics import roc_curve, auc
     
@@ -954,14 +955,33 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path) -> None:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Convert logits to probabilities
-    if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
-        probs = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
+    # Get the optimal aggregation function
+    agg_strategy = None
+    if optimal_aggregation and 'best_strategy' in optimal_aggregation:
+        agg_strategy = optimal_aggregation['best_strategy']
+        
+    # Define aggregation function based on strategy
+    if agg_strategy == 'median':
+        agg_func = np.median
+    elif agg_strategy == 'top_k_mean_10':
+        agg_func = lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.1)):]) if len(x) > 0 else 0
+    elif agg_strategy == 'top_k_mean_20':
+        agg_func = lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.2)):]) if len(x) > 0 else 0
+    elif agg_strategy == 'top_k_mean_30':
+        agg_func = lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.3)):]) if len(x) > 0 else 0
     else:
-        probs = df['raw_pred'].values
+        # Default to mean if no strategy provided or unknown strategy
+        agg_func = np.mean
+    
+    # Convert logits to probabilities if needed and add to dataframe for aggregation
+    if 'prob' not in df.columns:
+        if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
+            df['prob'] = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
+        else:
+            df['prob'] = df['raw_pred'].values
     
     # Calculate ROC curve for tile level
-    tile_fpr, tile_tpr, _ = roc_curve(df['label'], probs)
+    tile_fpr, tile_tpr, _ = roc_curve(df['label'], df['prob'])
     tile_auc = auc(tile_fpr, tile_tpr)
     
     # Create figure
@@ -974,57 +994,41 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path) -> None:
     
     # Calculate and plot higher-level ROC (slide or particle)
     if task == 'inflammation':
-        # Slide-level analysis
+        # Slide-level analysis using optimal aggregation
         slide_df = df.groupby('slide_name').agg({
-            'raw_pred': 'mean',
+            'prob': agg_func,
             'label': 'first'
         }).reset_index()
         
-        # Convert to probabilities if needed
-        if 'raw_pred' in slide_df.columns and len(slide_df) > 0:
-            # Check if we have logits (negative values)
-            if slide_df['raw_pred'].min() < 0:
-                slide_probs = torch.sigmoid(torch.tensor(slide_df['raw_pred'].values)).numpy()
-            else:
-                slide_probs = slide_df['raw_pred'].values
-        else:
-            # Handle case with empty dataframe
-            slide_probs = np.array([])
-        
         # Calculate ROC
-        slide_fpr, slide_tpr, _ = roc_curve(slide_df['label'], slide_probs)
+        slide_fpr, slide_tpr, _ = roc_curve(slide_df['label'], slide_df['prob'])
         slide_auc = auc(slide_fpr, slide_tpr)
+        
+        # Include aggregation strategy in label if available
+        strategy_label = f" using {agg_strategy}" if agg_strategy else ""
         
         # Plot
         plt.plot(slide_fpr, slide_tpr, 
-                 label=f'Slide-level (AUC = {slide_auc:.3f})',
+                 label=f'Slide-level{strategy_label} (AUC = {slide_auc:.3f})',
                  linewidth=2)
     
     else:  # tissue task
-        # Particle-level analysis
+        # Particle-level analysis using optimal aggregation
         particle_df = df.groupby(['slide_name', 'particle_id']).agg({
-            'raw_pred': 'mean',
+            'prob': agg_func,
             'label': 'first'
         }).reset_index()
         
-        # Convert to probabilities if needed
-        if 'raw_pred' in particle_df.columns and len(particle_df) > 0:
-            # Check if we have logits (negative values)
-            if particle_df['raw_pred'].min() < 0:
-                particle_probs = torch.sigmoid(torch.tensor(particle_df['raw_pred'].values)).numpy()
-            else:
-                particle_probs = particle_df['raw_pred'].values
-        else:
-            # Handle case with empty dataframe
-            particle_probs = np.array([])
-        
         # Calculate ROC
-        particle_fpr, particle_tpr, _ = roc_curve(particle_df['label'], particle_probs)
+        particle_fpr, particle_tpr, _ = roc_curve(particle_df['label'], particle_df['prob'])
         particle_auc = auc(particle_fpr, particle_tpr)
+        
+        # Include aggregation strategy in label if available
+        strategy_label = f" using {agg_strategy}" if agg_strategy else ""
         
         # Plot
         plt.plot(particle_fpr, particle_tpr, 
-                 label=f'Particle-level (AUC = {particle_auc:.3f})',
+                 label=f'Particle-level{strategy_label} (AUC = {particle_auc:.3f})',
                  linewidth=2)
     
     # Finishing touches
