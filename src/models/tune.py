@@ -418,11 +418,30 @@ def objective(trial: Trial, args: argparse.Namespace, model_tracker: ModelTracke
         try:
             pos_weight = torch.tensor([config['pos_weight']]).to(device)
             criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-            optimizer = torch.optim.AdamW(
-                model.parameters(),
-                lr=config['learning_rate'],
-                weight_decay=config['weight_decay']
-            )
+            optimizer_type = config.get('optimizer_type', None)
+
+            logging.info(f"Using {optimizer_type} optimizer for model: {config.get('model', 'unknown')}")
+
+            # Create the appropriate optimizer based on type
+            if optimizer_type.upper() == 'SGD':
+                # Get momentum from config or use default
+                momentum = config.get('momentum', 0.9)
+                optimizer = torch.optim.SGD(
+                    model.parameters(),
+                    lr=config['learning_rate'],
+                    momentum=momentum,
+                    weight_decay=config['weight_decay']
+                )
+                logging.info(f"SGD parameters: momentum={momentum}, lr={config['learning_rate']}")
+            else:
+                # Default to AdamW for all other models
+                optimizer = torch.optim.AdamW(
+                    model.parameters(),
+                    lr=config['learning_rate'],
+                    weight_decay=config['weight_decay']
+                )
+                logging.info(f"AdamW parameters: lr={config['learning_rate']}")
+
             logging.info(f"Trial {trial.number}: Optimizer and criterion created successfully")
         except Exception as opt_e:
             logging.error(f"Trial {trial.number}: Error creating optimizer/criterion: {str(opt_e)}")

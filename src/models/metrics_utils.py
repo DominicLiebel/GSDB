@@ -1271,6 +1271,7 @@ def create_summary_file(metrics: Dict, output_dir: Path):
             f.write(f"Specificity: {best_metrics.get('specificity', 0):.2%}\n")
             f.write(f"F1 Score: {best_metrics.get('f1', 0):.2%}\n")
             f.write(f"Balanced Accuracy: {best_metrics.get('balanced_acc', 0):.2%}\n")
+            f.write(f"AUC: {best_metrics.get('auc', 0):.2%}\n")
             
             # === VALIDATION DATASET CONFUSION MATRIX ===
             if 'validation_confusion_matrix' in agg:
@@ -1293,6 +1294,7 @@ def create_summary_file(metrics: Dict, output_dir: Path):
                 f.write(f"  Total Samples: {agg['test_confusion_matrix'].get('total', 0)}\n")
                 f.write(f"  Accuracy: {agg['test_confusion_matrix'].get('accuracy', 0):.2%}\n")
                 f.write(f"  F1 Score: {agg['test_confusion_matrix'].get('f1', 0):.2%}\n")
+                f.write(f"  AUC: {agg['test_confusion_matrix'].get('auc', 0):.2%}\n")
         
         # === EXTENDED METRICS SUMMARY (FOR TABLES) ===
         f.write("\n\nEXTENDED METRICS FOR TABLE FORMATTING\n")
@@ -1401,6 +1403,11 @@ def create_summary_file(metrics: Dict, output_dir: Path):
             f.write(f"Sensitivity: {test_cm.get('sensitivity', best_metrics.get('sensitivity', 0)):.2%}\n")
             f.write(f"Specificity: {test_cm.get('specificity', best_metrics.get('specificity', 0)):.2%}\n")
             f.write(f"F1 Score: {test_cm.get('f1', best_metrics.get('f1', 0)):.2%}\n")
+            # Add AUC for optimal aggregation
+            if 'auc' in test_cm:
+                f.write(f"AUC: {test_cm.get('auc', best_metrics.get('auc', 0)):.2%}\n")
+            elif 'auc' in best_metrics:
+                f.write(f"AUC: {best_metrics.get('auc', 0):.2%}\n")
         
         # === IMPLEMENTATION DETAILS ===
         f.write("\nIMPLEMENTATION DETAILS\n")

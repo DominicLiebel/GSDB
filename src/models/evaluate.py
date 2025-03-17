@@ -267,6 +267,14 @@ def evaluate_model(
                 logging.warning("No 'prob' column found in slide_df, using 'raw_pred' instead")
                 slide_preds = (slide_df['raw_pred'] > best_threshold).astype(int)
             
+            try:
+                from sklearn.metrics import roc_auc_score
+                optimal_agg_auc = roc_auc_score(slide_df['label'].values, slide_df['prob'].values)
+                logging.info(f"Optimal aggregation AUC: {optimal_agg_auc:.4f}")
+            except Exception as e:
+                logging.warning(f"Could not calculate AUC for optimal aggregation: {str(e)}")
+                optimal_agg_auc = 0.5  # Default for random classifier
+
             # Recalculate confusion matrix
             from sklearn.metrics import confusion_matrix
             tn, fp, fn, tp = confusion_matrix(slide_df['label'].values, slide_preds).ravel()
@@ -291,7 +299,8 @@ def evaluate_model(
                 'sensitivity': float(test_sensitivity),
                 'specificity': float(test_specificity),
                 'f1': float(test_f1),
-                'balanced_acc': float((test_sensitivity + test_specificity) / 2)
+                'balanced_acc': float((test_sensitivity + test_specificity) / 2),
+                'auc': float(optimal_agg_auc)
             }
             
             # Update the metrics with test confusion matrix for reporting
@@ -304,6 +313,7 @@ def evaluate_model(
             agg_results['best_metrics']['specificity'] = float(test_specificity)
             agg_results['best_metrics']['f1'] = float(test_f1)
             agg_results['best_metrics']['balanced_acc'] = float((test_sensitivity + test_specificity) / 2)
+            agg_results['best_metrics']['auc'] = float(optimal_agg_auc)
             
             # Log test confusion matrix
             logging.info("\nTest Confusion Matrix:")
@@ -314,6 +324,7 @@ def evaluate_model(
             logging.info(f"  Total Samples: {tp + tn + fp + fn}")
             logging.info(f"  Accuracy: {test_accuracy:.4f}")
             logging.info(f"  F1 Score: {test_f1:.4f}")
+            logging.info(f"  AUC: {optimal_agg_auc:.4f}")
         
         elif task == 'tissue':
             # Similar code for tissue task with particle grouping
@@ -332,6 +343,14 @@ def evaluate_model(
                 logging.warning("No 'prob' column found in particle_df, using 'raw_pred' instead")
                 particle_preds = (particle_df['raw_pred'] > best_threshold).astype(int)
             
+            try:
+                from sklearn.metrics import roc_auc_score
+                optimal_agg_auc = roc_auc_score(particle_df['label'].values, particle_df['prob'].values)
+                logging.info(f"Optimal aggregation AUC: {optimal_agg_auc:.4f}")
+            except Exception as e:
+                logging.warning(f"Could not calculate AUC for optimal aggregation: {str(e)}")
+                optimal_agg_auc = 0.5  # Default for random classifier
+
             # Recalculate confusion matrix
             from sklearn.metrics import confusion_matrix
             tn, fp, fn, tp = confusion_matrix(particle_df['label'].values, particle_preds).ravel()
@@ -356,7 +375,8 @@ def evaluate_model(
                 'sensitivity': float(test_sensitivity),
                 'specificity': float(test_specificity),
                 'f1': float(test_f1),
-                'balanced_acc': float((test_sensitivity + test_specificity) / 2)
+                'balanced_acc': float((test_sensitivity + test_specificity) / 2),
+                'auc': float(optimal_agg_auc)
             }
             
             # Update the metrics with test confusion matrix for reporting
@@ -369,6 +389,7 @@ def evaluate_model(
             agg_results['best_metrics']['specificity'] = float(test_specificity)
             agg_results['best_metrics']['f1'] = float(test_f1)
             agg_results['best_metrics']['balanced_acc'] = float((test_sensitivity + test_specificity) / 2)
+            agg_results['best_metrics']['auc'] = float(optimal_agg_auc)
             
             # Log test confusion matrix
             logging.info("\nTest Confusion Matrix:")
@@ -379,6 +400,7 @@ def evaluate_model(
             logging.info(f"  Total Samples: {tp + tn + fp + fn}")
             logging.info(f"  Accuracy: {test_accuracy:.4f}")
             logging.info(f"  F1 Score: {test_f1:.4f}")
+            logging.info(f"  AUC: {optimal_agg_auc:.4f}")
     else:
         # FIXED: Never optimize on test data - either use validation thresholds or defaults
         logging.info("\nNo pre-computed aggregation strategy found in validation thresholds.")

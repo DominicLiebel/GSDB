@@ -13,7 +13,7 @@ import json
 from typing import List, Dict, Tuple
 import seaborn as sns
 
-def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame, str]:
+def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame, str, Dict]:
     """
     Load results for a specific model with improved error handling.
     
@@ -22,7 +22,7 @@ def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame,
         model_name: Name of the model
     
     Returns:
-        DataFrame with predictions and task name
+        Tuple of (DataFrame with predictions, task name, optimal aggregation strategy)
     """
     model_dir = results_dir / model_name
     
@@ -46,7 +46,13 @@ def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame,
     if missing_cols:
         raise ValueError(f"Predictions file missing required columns: {missing_cols}")
     
-    # Determine task from stats file
+    # Initialize aggregation strategy info
+    agg_strategy = {
+        'strategy': 'mean',  # Default strategy
+        'params': {}
+    }
+    
+    # Determine task from stats file and load optimal aggregation strategy
     stats_path = model_dir / 'statistics.json'
     if not stats_path.exists():
         # Try to infer from predictions
@@ -60,6 +66,17 @@ def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame,
             with open(stats_path, 'r') as f:
                 stats = json.load(f)
             task = stats.get('task', 'unknown')
+            
+            # Extract optimal aggregation strategy if available
+            if 'optimal_aggregation' in stats:
+                agg_info = stats['optimal_aggregation']
+                strategy_name = agg_info.get('best_strategy', 'mean')
+                agg_strategy = {
+                    'strategy': strategy_name,
+                    'params': agg_info.get('best_metrics', {})
+                }
+                print(f"Found optimal aggregation strategy for {model_name}: {strategy_name}")
+            
             if task == 'unknown':
                 # Fallback to inference from columns
                 if 'particle_id' in df.columns:
@@ -75,59 +92,95 @@ def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame,
                 task = 'inflammation'
             print(f"Warning: Error reading statistics.json for {model_name}: {e}. Inferred task: {task}")
     
-    return df, task
+    return df, task, agg_strategy
 
-def calculate_roc_data(df: pd.DataFrame, task: str, level: str) -> Tuple[np.ndarray, np.ndarray, float]:
+
+def calculate_roc_data(df: pd.DataFrame, task: str, level: str, agg_strategy: Dict = None) -> Tuple[np.ndarray, np.ndarray, float]:
     """
-    Calculate ROC curve data for a specific level (tile, particle, or slide).
+    Calculate ROC curve data for a specific level (tile, particle, or slide) using optimal aggregation.
     
     Args:
         df: DataFrame with predictions
         task: Classification task ('tissue' or 'inflammation')
         level: Level to calculate ROC for ('tile', 'particle', or 'slide')
+        agg_strategy: Optional dictionary with optimal aggregation strategy information
     
     Returns:
         Tuple of (fpr, tpr, auc_score)
     """
     # Convert logits to probabilities if needed
     if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
-        probs = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
+        # Cache probabilities to 'prob' column for aggregation
+        df['prob'] = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
+        probs = df['prob'].values
     else:
-        probs = df['raw_pred'].values
+        # If already probabilities, still ensure 'prob' column exists
+        if 'prob' not in df.columns:
+            df['prob'] = df['raw_pred'].copy()
+        probs = df['prob'].values
     
     if level == 'tile':
         fpr, tpr, _ = roc_curve(df['label'], probs)
         roc_auc = auc(fpr, tpr)
     elif level == 'particle' and task == 'tissue':
+        # Get aggregation function based on strategy
+        agg_func = get_aggregation_function(agg_strategy)
+        
+        # Group by particle using the specified aggregation strategy
         particle_df = df.groupby(['slide_name', 'particle_id']).agg({
-            'raw_pred': 'mean',
+            'prob': agg_func,
             'label': 'first'
         }).reset_index()
         
-        if 'raw_pred' in particle_df.columns and (particle_df['raw_pred'].min() < 0 or particle_df['raw_pred'].max() > 1):
-            particle_probs = torch.sigmoid(torch.tensor(particle_df['raw_pred'].values)).numpy()
-        else:
-            particle_probs = particle_df['raw_pred'].values
-        
-        fpr, tpr, _ = roc_curve(particle_df['label'], particle_probs)
+        # Use the aggregated probabilities for ROC curve
+        fpr, tpr, _ = roc_curve(particle_df['label'], particle_df['prob'])
         roc_auc = auc(fpr, tpr)
     elif level == 'slide' and task == 'inflammation':
+        # Get aggregation function based on strategy
+        agg_func = get_aggregation_function(agg_strategy)
+        
+        # Group by slide using the specified aggregation strategy
         slide_df = df.groupby('slide_name').agg({
-            'raw_pred': 'mean',
+            'prob': agg_func,
             'label': 'first'
         }).reset_index()
         
-        if 'raw_pred' in slide_df.columns and (slide_df['raw_pred'].min() < 0 or slide_df['raw_pred'].max() > 1):
-            slide_probs = torch.sigmoid(torch.tensor(slide_df['raw_pred'].values)).numpy()
-        else:
-            slide_probs = slide_df['raw_pred'].values
-        
-        fpr, tpr, _ = roc_curve(slide_df['label'], slide_probs)
+        # Use the aggregated probabilities for ROC curve
+        fpr, tpr, _ = roc_curve(slide_df['label'], slide_df['prob'])
         roc_auc = auc(fpr, tpr)
     else:
         raise ValueError(f"Invalid combination of task '{task}' and level '{level}'")
     
     return fpr, tpr, roc_auc
+
+def get_aggregation_function(agg_strategy: Dict = None) -> Callable:
+    """
+    Get the aggregation function based on the provided strategy.
+    
+    Args:
+        agg_strategy: Dictionary with strategy information
+    
+    Returns:
+        Callable: Aggregation function
+    """
+    if agg_strategy is None:
+        return np.mean  # Default to mean aggregation
+    
+    strategy_name = agg_strategy.get('strategy', 'mean')
+    
+    if strategy_name == 'mean':
+        return np.mean
+    elif strategy_name == 'median':
+        return np.median
+    elif strategy_name == 'top_k_mean_10':
+        return lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.1)):]) if len(x) > 0 else 0
+    elif strategy_name == 'top_k_mean_20':
+        return lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.2)):]) if len(x) > 0 else 0
+    elif strategy_name == 'top_k_mean_30':
+        return lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.3)):]) if len(x) > 0 else 0
+    else:
+        print(f"Unknown aggregation strategy: {strategy_name}, defaulting to mean")
+        return np.mean
 
 def get_class_names(task: str, df: pd.DataFrame = None) -> Tuple[str, str]:
     """
@@ -283,20 +336,30 @@ def main():
     for i, model_dir in enumerate(args.models):
         display_name = display_names[i]
         try:
-            df, task = get_model_results(results_dir, model_dir)
+            df, task, agg_strategy = get_model_results(results_dir, model_dir)
             
             if task == 'tissue':
-                tissue_models[display_name] = {}
+                tissue_models[display_name] = {
+                    'data': df,
+                    'agg_strategy': agg_strategy
+                }
                 # Calculate tile-level ROC
                 tissue_models[display_name]['tile'] = calculate_roc_data(df, task, 'tile')
-                # Calculate particle-level ROC
-                tissue_models[display_name]['particle'] = calculate_roc_data(df, task, 'particle')
+                # Calculate particle-level ROC with optimal aggregation strategy
+                tissue_models[display_name]['particle'] = calculate_roc_data(df, task, 'particle', agg_strategy)
+                # Add strategy name for display
+                tissue_models[display_name]['strategy'] = agg_strategy.get('strategy', 'mean')
             elif task == 'inflammation':
-                inflammation_models[display_name] = {}
+                inflammation_models[display_name] = {
+                    'data': df,
+                    'agg_strategy': agg_strategy
+                }
                 # Calculate tile-level ROC
                 inflammation_models[display_name]['tile'] = calculate_roc_data(df, task, 'tile')
-                # Calculate slide-level ROC
-                inflammation_models[display_name]['slide'] = calculate_roc_data(df, task, 'slide')
+                # Calculate slide-level ROC with optimal aggregation strategy
+                inflammation_models[display_name]['slide'] = calculate_roc_data(df, task, 'slide', agg_strategy)
+                # Add strategy name for display
+                inflammation_models[display_name]['strategy'] = agg_strategy.get('strategy', 'mean')
             else:
                 print(f"Unknown task '{task}' for model '{model_dir}' (display name: {display_name})")
         except Exception as e:
@@ -314,36 +377,104 @@ def main():
     inflammation_sample_df = None
     
     # Try to find sample dataframes with class information
-    for i, model_dir in enumerate(args.models):
-        try:
-            df, task = get_model_results(results_dir, model_dir)
-            
-            if task == 'tissue' and tissue_sample_df is None:
-                # Try to find a dataframe with tissue_type information
-                if 'tissue_type' in df.columns:
-                    tissue_sample_df = df
-                    print(f"Found tissue class information in model: {model_dir}")
-                    
-            if task == 'inflammation' and inflammation_sample_df is None:
-                # Try to find a dataframe with inflammation_status information
-                if 'inflammation_status' in df.columns:
-                    inflammation_sample_df = df
-                    print(f"Found inflammation class information in model: {model_dir}")
-                    
-            if tissue_sample_df is not None and inflammation_sample_df is not None:
-                break  # Found both, no need to continue
+    for model_name, model_info in tissue_models.items():
+        if 'data' in model_info and tissue_sample_df is None:
+            df = model_info['data']
+            # Try to find a dataframe with tissue_type information
+            if 'tissue_type' in df.columns:
+                tissue_sample_df = df
+                print(f"Found tissue class information in model: {model_name}")
                 
-        except Exception:
-            continue
+    for model_name, model_info in inflammation_models.items():
+        if 'data' in model_info and inflammation_sample_df is None:
+            df = model_info['data']
+            # Try to find a dataframe with inflammation_status information
+            if 'inflammation_status' in df.columns:
+                inflammation_sample_df = df
+                print(f"Found inflammation class information in model: {model_name}")
+                
+    # Modified plot_combined_roc_curves function to include aggregation strategy in the label
+    def plot_combined_roc_curves_with_strategy(model_data, task, level, output_path, sample_df=None):
+        """Plot combined ROC curves showing the aggregation strategy used."""
+        # Create scientific plot with square format
+        plt.figure(figsize=(8, 8))
+        
+        # Set seaborn style for scientific plotting
+        sns.set_style("whitegrid")
+        
+        # Colors for different models
+        colors = sns.color_palette("colorblind", n_colors=len(model_data))
+        
+        for (model_name, model_info), color in zip(model_data.items(), colors):
+            if level in model_info:
+                fpr, tpr, roc_auc = model_info[level]
+                
+                # Include the aggregation strategy in the label if it's not the tile level
+                if level != 'tile' and 'strategy' in model_info:
+                    strategy = model_info['strategy']
+                    plt.plot(fpr, tpr, lw=2, color=color, 
+                            label=f'{model_name} ({strategy}, AUC = {roc_auc:.3f})')
+                else:
+                    plt.plot(fpr, tpr, lw=2, color=color, 
+                            label=f'{model_name} (AUC = {roc_auc:.3f})')
+        
+        # Plot diagonal line
+        plt.plot([0, 1], [0, 1], 'k--', lw=1.5)
+        
+        # Configure plot
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        
+        # Get class names for the task
+        positive_class, negative_class = get_class_names(task, sample_df)
+        
+        # Add class labels to axis labels
+        plt.xlabel(f'False Positive Rate (1-Specificity)\nNegative class: {negative_class}', fontsize=14)
+        plt.ylabel(f'True Positive Rate (Sensitivity)\nPositive class: {positive_class}', fontsize=14)
+        
+        level_name = level.capitalize()
+        if task == 'tissue':
+            title = f'{level_name}-Level ROC Curves - Tissue Classification\nPositive: {positive_class}, Negative: {negative_class}'
+        else:  # inflammation
+            title = f'{level_name}-Level ROC Curves - Inflammation Classification\nPositive: {positive_class}, Negative: {negative_class}'
+        
+        plt.title(title, fontsize=16)
+        plt.legend(loc="lower right", fontsize=12)
+        
+        # Add grid for better readability
+        plt.grid(True, alpha=0.3)
+        
+        # Add tick marks
+        plt.tick_params(axis='both', which='major', labelsize=12)
+        
+        # Ensure aspect ratio is equal (square plot)
+        plt.gca().set_aspect('equal', adjustable='box')
+        
+        # Save figure with high resolution and extra padding for annotation
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
+        plt.close()
     
+    # Modified plot function reference
     if args.task in ['tissue', 'both'] and tissue_models:
         for level in levels_to_plot:
             if level == 'slide':  # Skip invalid combination
                 continue
                 
             output_path = output_dir / f'tissue_{level}_roc_comparison.png'
-            plot_combined_roc_curves(tissue_models, 'tissue', level, output_path, tissue_sample_df)
-            print(f"Generated tissue {level}-level ROC comparison: {output_path}")
+            
+            # Extract just the ROC curves for plotting
+            plot_data = {}
+            for model_name, model_info in tissue_models.items():
+                if level in model_info:
+                    plot_data[model_name] = {
+                        level: model_info[level],
+                        'strategy': model_info.get('strategy', 'mean')
+                    }
+            
+            if plot_data:  # Only create plot if we have data
+                plot_combined_roc_curves_with_strategy(plot_data, 'tissue', level, output_path, tissue_sample_df)
+                print(f"Generated tissue {level}-level ROC comparison: {output_path}")
     
     if args.task in ['inflammation', 'both'] and inflammation_models:
         for level in levels_to_plot:
@@ -351,8 +482,19 @@ def main():
                 continue
                 
             output_path = output_dir / f'inflammation_{level}_roc_comparison.png'
-            plot_combined_roc_curves(inflammation_models, 'inflammation', level, output_path, inflammation_sample_df)
-            print(f"Generated inflammation {level}-level ROC comparison: {output_path}")
+            
+            # Extract just the ROC curves for plotting
+            plot_data = {}
+            for model_name, model_info in inflammation_models.items():
+                if level in model_info:
+                    plot_data[model_name] = {
+                        level: model_info[level],
+                        'strategy': model_info.get('strategy', 'mean')
+                    }
+            
+            if plot_data:  # Only create plot if we have data
+                plot_combined_roc_curves_with_strategy(plot_data, 'inflammation', level, output_path, inflammation_sample_df)
+                print(f"Generated inflammation {level}-level ROC comparison: {output_path}")
 
 if __name__ == "__main__":
     main()
