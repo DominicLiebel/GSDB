@@ -10,7 +10,7 @@ import argparse
 from pathlib import Path
 from sklearn.metrics import roc_curve, auc
 import json
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Callable
 import seaborn as sns
 
 def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame, str, Dict]:

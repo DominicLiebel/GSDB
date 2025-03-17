@@ -615,7 +615,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--optimizer',
         type=str,
-        default='AdamW',
         help='Optimizer used for training'
     )
     parser.add_argument(
