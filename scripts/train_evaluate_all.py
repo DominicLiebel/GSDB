@@ -252,7 +252,7 @@ def main():
     
     # Determine which dataset splits to evaluate
     if args.eval_dataset == "all":
-        evaluation_splits = ["validation", "test", "test_scanner2"]
+        evaluation_splits = ["test", "test_scanner2"]
     else:
         evaluation_splits = [args.eval_dataset]
     
