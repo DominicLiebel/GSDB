@@ -60,15 +60,6 @@ The framework incorporates a full machine learning pipeline including:
    export GASTRIC_BASE_DIR="/path/to/your/data"
    ```
 
-### Docker Installation (Alternative) - TODO
-
-For complete reproducibility, we provide a Docker container:
-
-```bash
-docker pull liebeld/gsdb-classification:latest
-docker run --gpus all -v /path/to/your/data:/data liebeld/gsdb-classification:latest
-```
-
 ## Reproducibility
 
 We provide several mechanisms to ensure reproducibility of our results:
@@ -93,20 +84,12 @@ python src/models/train.py --task inflammation --model resnet18 --seed 42 --dete
 **Important Note:** The data splitting script (create_splits.py) uses the base seed plus 2 (seed 42+2=44) to ensure balanced class distribution. This offset was found to produce better balance between train/validation/test sets than the default seed alone, as described in the Master's Thesis.
 
 
-### Configuration Files
+### Configuration File
 
 All hyperparameters are stored in a YAML file:
 
 - `configs/model_config.yaml`: Model training hyperparameters
 
-### Pre-trained Models
-
-We provide pre-trained model weights for all reported experiments: TODO
-
-```bash
-# Download pre-trained models
-python scripts/download_models.py --task inflammation --model convnext_large
-```
 
 ### Standard Evaluation Protocol
 
@@ -195,10 +178,9 @@ For detailed information on the dataset, see our [data documentation](docs/data_
 
 Our dataset consists of:
 - 360 total slides
-- 198 inflamed samples, 129 non-inflamed samples
-- 1704 corpus tissue regions, 1779 antrum tissue regions
-- 260 HE-stained slides, 55 PAS-stained slides, 45 MG-stained slides
 - 270 slides from scanner 1, 90 slides from scanner 2
+- 274 HE-stained slides, 34 PAS-stained slides, 34 MG-stained slides
+- 41,107 256x256 pixel tiles
 
 ## Model Architecture
 
@@ -212,9 +194,8 @@ We implement several deep learning architectures through our modular architectur
 
 Models are trained using:
 - Binary cross-entropy loss with class weighting
-- AdamW optimizer with cosine learning rate scheduling
-- Mixed-precision training for faster computation
-- Data augmentation including rotation, flipping, and color jittering
+- AdamW optimizer with cosine learning rate scheduling or SGD (ResNet18)
+- Data augmentation including e.g., rotation, flipping
 
 The model implementations can be found in `src/models/architectures/`.
 
@@ -223,6 +204,20 @@ The model implementations can be found in `src/models/architectures/`.
 ### Antrum/Corpus Classification Results - Dataset: HE stained, Test on Scanner1
 
 For classification of slides from the same scanner as the train and validation set (Scanner1) the best tissue models achieve:
+
+| Model | Test Accuracy | Test F1 | Test AUC |
+|-------|---------------|---------|----------|
+| ResNet18 | xx.x% | 0.xx | 0.xx |
+| Densenet121 | xx.x% | 0.xx | 0.xx |
+| Densenet169 | xx.x% | 0.xx | 0.xx |
+| ConvNeXt Large | xx.x% | 0.xx | 0.xx |
+| Swin V2 B | x.x% | 0.xx | 0.xx |
+| GigaPath | x.x% | 0.xx | 0.xx |
+
+
+### Non/Inflamed Classification Results - Dataset: HE stained, Test on Scanner1
+
+For classification of slides from the same scanner as the train and validation set (Scanner1) the best inflammation models achieve:
 
 | Model | Test Accuracy | Test F1 | Test AUC |
 |-------|---------------|---------|----------|
@@ -246,19 +241,6 @@ For classification of slides from a different scanner (Scanner2) as the train an
 | Swin V2 B | x.x% | 0.xx | 0.xx |
 | GigaPath | x.x% | 0.xx | 0.xx |
 
-### Non/Inflamed Classification Results - Dataset: HE stained, Test on Scanner1
-
-For classification of slides from the same scanner as the train and validation set (Scanner1) the best inflammation models achieve:
-
-| Model | Test Accuracy | Test F1 | Test AUC |
-|-------|---------------|---------|----------|
-| ResNet18 | xx.x% | 0.xx | 0.xx |
-| Densenet121 | xx.x% | 0.xx | 0.xx |
-| Densenet169 | xx.x% | 0.xx | 0.xx |
-| ConvNeXt Large | xx.x% | 0.xx | 0.xx |
-| Swin V2 B | x.x% | 0.xx | 0.xx |
-| GigaPath | x.x% | 0.xx | 0.xx |
-
 ### Non/Inflamed Generalizability Classification Results - Dataset: HE stained, Test on Scanner2
 
 For classification of slides from a different scanner (Scanner2) as the train and validation set (Scanner1) the best inflammation models achieve:
@@ -272,7 +254,7 @@ For classification of slides from a different scanner (Scanner2) as the train an
 | Swin V2 B | x.x% | 0.xx | 0.xx |
 | GigaPath | x.x% | 0.xx | 0.xx |
 
-For detailed performance metrics, see `results/metrics/` directory after running evaluation.
+For detailed performance metrics, see `results/evaluations` directory after running evaluation.
 
 ## Documentation
 
