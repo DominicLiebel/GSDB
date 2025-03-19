@@ -299,10 +299,11 @@ Please ensure your code follows our [style guide](docs/style_guide.md) and inclu
 If you use this codebase in your research, please cite our paper:
 
 ```bibtex
-@article{liebel2025gastric,
+@mastersthesis{liebel2025gastric,
   title={Developing a comprehensive dataset and baseline model for classification and generalizability testing of gastric whole slide images in computational pathology},
   author={Liebel, Dominic},
-  year={2025}
+  year={2025},
+  school={University of Bamberg}
 }
 ```
 
