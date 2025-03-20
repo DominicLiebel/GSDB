@@ -944,7 +944,7 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path, optimal_aggre
     """Plot ROC curves for different hierarchical levels using optimal aggregation strategy.
     
     Args:
-        df: DataFrame with predictions
+        df: DataFrame with test predictions (not validation)
         task: Classification task
         output_dir: Directory to save plots
         optimal_aggregation: Optional dictionary with optimal aggregation strategy
@@ -980,7 +980,7 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path, optimal_aggre
         else:
             df['prob'] = df['raw_pred'].values
     
-    # Calculate ROC curve for tile level
+    # FIXED: Calculate ROC curve for tile level and explicitly store test AUC value
     tile_fpr, tile_tpr, _ = roc_curve(df['label'], df['prob'])
     tile_auc = auc(tile_fpr, tile_tpr)
     
@@ -989,7 +989,7 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path, optimal_aggre
     
     # Plot tile-level ROC
     plt.plot(tile_fpr, tile_tpr, 
-             label=f'Tile-level (AUC = {tile_auc:.3f})',
+             label=f'Tile-level (Test AUC = {tile_auc:.3f})',  # Explicitly label as test data
              linewidth=2)
     
     # Calculate and plot higher-level ROC (slide or particle)
@@ -1007,9 +1007,9 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path, optimal_aggre
         # Include aggregation strategy in label if available
         strategy_label = f" using {agg_strategy}" if agg_strategy else ""
         
-        # Plot
+        # Plot with explicit test AUC label
         plt.plot(slide_fpr, slide_tpr, 
-                 label=f'Slide-level{strategy_label} (AUC = {slide_auc:.3f})',
+                 label=f'Slide-level{strategy_label} (Test AUC = {slide_auc:.3f})',
                  linewidth=2)
     
     else:  # tissue task
@@ -1026,24 +1026,26 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path, optimal_aggre
         # Include aggregation strategy in label if available
         strategy_label = f" using {agg_strategy}" if agg_strategy else ""
         
-        # Plot
+        # Plot with explicit test AUC label
         plt.plot(particle_fpr, particle_tpr, 
-                 label=f'Particle-level{strategy_label} (AUC = {particle_auc:.3f})',
+                 label=f'Particle-level{strategy_label} (Test AUC = {particle_auc:.3f})',
                  linewidth=2)
     
     # Finishing touches
     plt.plot([0, 1], [0, 1], 'k--', label='Random classifier')
     plt.xlabel('False Positive Rate', fontsize=12)
     plt.ylabel('True Positive Rate', fontsize=12)
-    plt.title(f'ROC Curves for {task.capitalize()} Classification', fontsize=14)
+    
+    # FIXED: Add clarity to title to specify these are test results
+    plt.title(f'ROC Curves for {task.capitalize()} Classification (Test Data)', fontsize=14)
     plt.legend(loc='lower right', fontsize=10)
     plt.grid(True, alpha=0.3)
     
-    # Save figure
+    # Save figure with explicit 'test' in filename
     try:
-        save_path = output_dir / f'{task}_roc_curves.png'
+        save_path = output_dir / f'{task}_test_roc_curves.png'
         plt.savefig(save_path, dpi=300)
-        logging.info(f"Successfully saved ROC curve visualization to {save_path}")
+        logging.info(f"Successfully saved test ROC curve visualization to {save_path}")
         plt.close()
     except Exception as e:
         logging.error(f"Failed to save ROC visualization: {str(e)}")
@@ -1182,9 +1184,71 @@ def calculate_validation_thresholds(model_path: Optional[Path] = None, model: Op
         output_dir=output_dir
     )
     
+    # FIXED: Calculate validation AUC values explicitly for reporting
+    validation_auc_metrics = {}
+    
+    # Calculate tile-level AUC
+    if 'raw_pred' in val_df.columns:
+        # Convert logits to probabilities if needed
+        if val_df['raw_pred'].min() < 0 or val_df['raw_pred'].max() > 1:
+            tile_probs = torch.sigmoid(torch.tensor(val_df['raw_pred'].values)).numpy()
+        else:
+            tile_probs = val_df['raw_pred'].values
+            
+        # Calculate AUC
+        from sklearn.metrics import roc_auc_score
+        try:
+            validation_auc_metrics['validation_tile_auroc'] = roc_auc_score(val_df['label'].values, tile_probs)
+        except Exception as e:
+            logging.warning(f"Could not calculate validation tile-level AUC: {str(e)}")
+            validation_auc_metrics['validation_tile_auroc'] = 0.5
+    
+    # Calculate higher-level AUC based on task
+    if task == 'inflammation':
+        # Calculate slide-level AUC
+        slide_df = val_df.groupby('slide_name').agg({
+            'raw_pred': 'mean',
+            'label': 'first'
+        }).reset_index()
+        
+        if 'raw_pred' in slide_df.columns:
+            # Convert logits to probabilities if needed
+            if slide_df['raw_pred'].min() < 0 or slide_df['raw_pred'].max() > 1:
+                slide_probs = torch.sigmoid(torch.tensor(slide_df['raw_pred'].values)).numpy()
+            else:
+                slide_probs = slide_df['raw_pred'].values
+                
+            # Calculate AUC
+            try:
+                validation_auc_metrics['validation_slide_auroc'] = roc_auc_score(slide_df['label'].values, slide_probs)
+            except Exception as e:
+                logging.warning(f"Could not calculate validation slide-level AUC: {str(e)}")
+                validation_auc_metrics['validation_slide_auroc'] = 0.5
+    else:  # tissue task
+        # Calculate particle-level AUC
+        particle_df = val_df.groupby(['slide_name', 'particle_id']).agg({
+            'raw_pred': 'mean',
+            'label': 'first'
+        }).reset_index()
+        
+        if 'raw_pred' in particle_df.columns:
+            # Convert logits to probabilities if needed
+            if particle_df['raw_pred'].min() < 0 or particle_df['raw_pred'].max() > 1:
+                particle_probs = torch.sigmoid(torch.tensor(particle_df['raw_pred'].values)).numpy()
+            else:
+                particle_probs = particle_df['raw_pred'].values
+                
+            # Calculate AUC
+            try:
+                validation_auc_metrics['validation_particle_auroc'] = roc_auc_score(particle_df['label'].values, particle_probs)
+            except Exception as e:
+                logging.warning(f"Could not calculate validation particle-level AUC: {str(e)}")
+                validation_auc_metrics['validation_particle_auroc'] = 0.5
+    
     validation_optimized = {
         **optimal_thresholds,
-        "optimal_aggregation": optimal_aggregation  # Add aggregation strategy to results
+        "optimal_aggregation": optimal_aggregation,  # Add aggregation strategy to results
+        **validation_auc_metrics  # Add validation AUC metrics
     }
 
     # Save thresholds to file if output directory is provided
@@ -1198,8 +1262,9 @@ def calculate_validation_thresholds(model_path: Optional[Path] = None, model: Op
     return validation_optimized
 
 def create_summary_file(metrics: Dict, output_dir: Path):
-    """Create a human-readable summary file of metrics."""
+    """Create a human-readable summary file of metrics with LaTeX-friendly formatting."""
     summary_file = output_dir / "metrics_summary.txt"
+    latex_summary_file = output_dir / "metrics_latex.txt"
     
     with open(summary_file, 'w') as f:
         # Write header
@@ -1211,7 +1276,6 @@ def create_summary_file(metrics: Dict, output_dir: Path):
         f.write(f"Split: {metrics.get('split', 'Unknown')}\n")
         f.write(f"Model: {metrics.get('model_name', 'Unknown')}\n")
         f.write(f"Total Samples: {metrics.get('total_samples', 0)}\n")
-        # Remove the confusing threshold line
         
         # === TEST DATASET METRICS ===
         
@@ -1318,8 +1382,8 @@ def create_summary_file(metrics: Dict, output_dir: Path):
                 f.write(f"Tile-Level Specificity: {tile_metrics.get('specificity', 0):.2%}\n")
                 f.write(f"Tile-Level F1 Score: {tile_metrics.get('f1', 0):.2%}\n")
                 
-                # Get AUC from validation data if available
-                val_auroc = metrics.get('validation_tile_auroc', metrics.get('tile_auroc', 0))
+                # FIXED: Use validation-specific AUC value if available
+                val_auroc = metrics.get('validation_tile_auroc', 0)
                 f.write(f"Tile-Level AUC: {val_auroc:.2%}\n")
             
             # Inflammation Task - Slide level
@@ -1330,8 +1394,8 @@ def create_summary_file(metrics: Dict, output_dir: Path):
                 f.write(f"Slide-Level Specificity: {slide_metrics.get('specificity', 0):.2%}\n")
                 f.write(f"Slide-Level F1 Score: {slide_metrics.get('f1', 0):.2%}\n")
                 
-                # Get AUC from validation data if available
-                val_auroc = metrics.get('validation_slide_auroc', metrics.get('slide_auroc', 0))
+                # FIXED: Use validation-specific AUC value if available
+                val_auroc = metrics.get('validation_slide_auroc', 0)
                 f.write(f"Slide-Level AUC: {val_auroc:.2%}\n")
                 
         else:  # Tissue Task
@@ -1343,8 +1407,8 @@ def create_summary_file(metrics: Dict, output_dir: Path):
                 f.write(f"Tile-Level Specificity: {tile_metrics.get('specificity', 0):.2%}\n")
                 f.write(f"Tile-Level F1 Score: {tile_metrics.get('f1', 0):.2%}\n")
                 
-                # Get AUC from validation data if available
-                val_auroc = metrics.get('validation_tile_auroc', metrics.get('tile_auroc', 0))
+                # FIXED: Use validation-specific AUC value if available
+                val_auroc = metrics.get('validation_tile_auroc', 0)
                 f.write(f"Tile-Level AUC: {val_auroc:.2%}\n")
             
             # Tissue Task - Particle level
@@ -1355,8 +1419,8 @@ def create_summary_file(metrics: Dict, output_dir: Path):
                 f.write(f"Particle-Level Specificity: {particle_metrics.get('specificity', 0):.2%}\n")
                 f.write(f"Particle-Level F1 Score: {particle_metrics.get('f1', 0):.2%}\n")
                 
-                # Get AUC from validation data if available
-                val_auroc = metrics.get('validation_particle_auroc', metrics.get('particle_auroc', 0))
+                # FIXED: Use validation-specific AUC value if available
+                val_auroc = metrics.get('validation_particle_auroc', 0)
                 f.write(f"Particle-Level AUC: {val_auroc:.2%}\n")
         
         # === TEST PERFORMANCE ===
@@ -1423,6 +1487,128 @@ def create_summary_file(metrics: Dict, output_dir: Path):
         f.write(f"Learning Rate: {impl_details.get('learning_rate', 'unknown')}\n")
         f.write(f"Batch Size: {impl_details.get('batch_size', 'unknown')}\n")
         f.write(f"Positive Class Weight: {impl_details.get('pos_class_weight', 'unknown')}\n")
+    
+    # Create LaTeX-friendly version
+    with open(latex_summary_file, 'w') as f:
+        # Format model name for LaTeX
+        model_name = metrics.get('model_name', 'Unknown')
+        if model_name.startswith('gigapath'):
+            model_name = 'GigaPath'
+        elif model_name.startswith('resnet'):
+            model_name = 'ResNet-18'
+        elif model_name.startswith('swin'):
+            model_name = 'Swin-V2-B'
+        elif model_name.startswith('convnext'):
+            model_name = 'ConvNeXt-L'
+        elif model_name.startswith('dense'):
+            if '169' in model_name:
+                model_name = 'DenseNet-169'
+            else:
+                model_name = 'DenseNet-121'
                 
-    logging.info(f"Created summary file at: {summary_file}")
+        task = metrics.get('task', 'unknown')
+        task_name = 'Inflammation' if task == 'inflammation' else 'Tissue Type'
+        
+        # Get test split name
+        split = metrics.get('split', 'unknown')
+        if split == 'test':
+            split_name = 'Scanner 1'
+        elif split == 'test_scanner2':
+            split_name = 'Scanner 2'
+        else:
+            split_name = split.capitalize()
+            
+        # Write LaTeX-ready model and task information
+        f.write("% LaTeX-ready metrics for tables\n")
+        f.write(f"% Model: {model_name}, Task: {task_name}, Split: {split_name}\n\n")
+        
+        # Format test metrics for LaTeX tables
+        f.write("% TEST METRICS - Copy these values directly to LaTeX tables\n")
+        
+        # Higher-level metrics (slide for inflammation, particle for tissue)
+        if task == 'inflammation':
+            # Validation metrics
+            val_auroc = metrics.get('validation_slide_auroc', 0)
+            val_auroc_str = f"{val_auroc:.1%}"
+            
+            # Test metrics
+            test_auroc = metrics.get('slide_auroc', 0)
+            test_auroc_str = f"{test_auroc:.1%}"
+            
+            test_acc = metrics.get('slide_accuracy', 0)
+            test_sens = metrics.get('slide_sensitivity', 0)
+            test_spec = metrics.get('slide_specificity', 0)
+            test_f1 = metrics.get('slide_f1', 0)
+            
+            # Format LaTeX-friendly row
+            f.write("% For LaTeX table row (slide-level)\n")
+            f.write(f"{model_name} & {val_auroc_str.strip('%')} & {test_auroc_str.strip('%')} & ")
+            f.write(f"{test_acc:.1%}".strip('%') + " & ")
+            f.write(f"{test_sens:.1%}".strip('%') + " & ")
+            f.write(f"{test_spec:.1%}".strip('%') + " & ")
+            f.write(f"{test_f1:.1%}".strip('%') + " \\\\\n")
+            
+            # Add optimal aggregation if available
+            if 'optimal_aggregation' in metrics and 'test_confusion_matrix' in metrics['optimal_aggregation']:
+                agg = metrics['optimal_aggregation']
+                test_cm = agg['test_confusion_matrix']
+                agg_name = agg.get('best_strategy', 'mean')
+                
+                agg_acc = test_cm.get('accuracy', 0)
+                agg_sens = test_cm.get('sensitivity', 0)
+                agg_spec = test_cm.get('specificity', 0)
+                agg_f1 = test_cm.get('f1', 0)
+                agg_auc = test_cm.get('auc', 0)
+                
+                # Format LaTeX-friendly row for optimal aggregation
+                f.write(f"\n% For LaTeX table row (optimal aggregation: {agg_name})\n")
+                f.write(f"{model_name} & {val_auroc_str.strip('%')} & {agg_auc:.1%}".strip('%') + " & ")
+                f.write(f"{agg_acc:.1%}".strip('%') + " & ")
+                f.write(f"{agg_sens:.1%}".strip('%') + " & ")
+                f.write(f"{agg_spec:.1%}".strip('%') + " & ")
+                f.write(f"{agg_f1:.1%}".strip('%') + " \\\\\n")
+                
+        else:  # Tissue task
+            # Validation metrics
+            val_auroc = metrics.get('validation_particle_auroc', 0)
+            val_auroc_str = f"{val_auroc:.1%}"
+            
+            # Test metrics
+            test_auroc = metrics.get('particle_auroc', 0)
+            test_auroc_str = f"{test_auroc:.1%}"
+            
+            test_acc = metrics.get('particle_accuracy', 0)
+            test_sens = metrics.get('particle_sensitivity', 0)
+            test_spec = metrics.get('particle_specificity', 0)
+            test_f1 = metrics.get('particle_f1', 0)
+            
+            # Format LaTeX-friendly row
+            f.write("% For LaTeX table row (particle-level)\n")
+            f.write(f"{model_name} & {val_auroc_str.strip('%')} & {test_auroc_str.strip('%')} & ")
+            f.write(f"{test_acc:.1%}".strip('%') + " & ")
+            f.write(f"{test_sens:.1%}".strip('%') + " & ")
+            f.write(f"{test_spec:.1%}".strip('%') + " & ")
+            f.write(f"{test_f1:.1%}".strip('%') + " \\\\\n")
+            
+            # Add optimal aggregation if available
+            if 'optimal_aggregation' in metrics and 'test_confusion_matrix' in metrics['optimal_aggregation']:
+                agg = metrics['optimal_aggregation']
+                test_cm = agg['test_confusion_matrix']
+                agg_name = agg.get('best_strategy', 'mean')
+                
+                agg_acc = test_cm.get('accuracy', 0)
+                agg_sens = test_cm.get('sensitivity', 0)
+                agg_spec = test_cm.get('specificity', 0)
+                agg_f1 = test_cm.get('f1', 0)
+                agg_auc = test_cm.get('auc', 0)
+                
+                # Format LaTeX-friendly row for optimal aggregation
+                f.write(f"\n% For LaTeX table row (optimal aggregation: {agg_name})\n")
+                f.write(f"{model_name} & {val_auroc_str.strip('%')} & {agg_auc:.1%}".strip('%') + " & ")
+                f.write(f"{agg_acc:.1%}".strip('%') + " & ")
+                f.write(f"{agg_sens:.1%}".strip('%') + " & ")
+                f.write(f"{agg_spec:.1%}".strip('%') + " & ")
+                f.write(f"{agg_f1:.1%}".strip('%') + " \\\\\n")
+                
+    logging.info(f"Created summary files at: {summary_file} and {latex_summary_file}")
     return summary_file

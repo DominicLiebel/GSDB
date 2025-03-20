@@ -15,14 +15,14 @@ import seaborn as sns
 
 def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame, str, Dict]:
     """
-    Load results for a specific model with improved error handling.
+    Load test results for a specific model with improved error handling.
     
     Args:
         results_dir: Base directory containing model results
         model_name: Name of the model
     
     Returns:
-        Tuple of (DataFrame with predictions, task name, optimal aggregation strategy)
+        Tuple of (DataFrame with test predictions, task name, optimal aggregation strategy)
     """
     model_dir = results_dir / model_name
     
@@ -98,15 +98,16 @@ def get_model_results(results_dir: Path, model_name: str) -> Tuple[pd.DataFrame,
 def calculate_roc_data(df: pd.DataFrame, task: str, level: str, agg_strategy: Dict = None) -> Tuple[np.ndarray, np.ndarray, float]:
     """
     Calculate ROC curve data for a specific level (tile, particle, or slide) using optimal aggregation.
+    This function works on test data predictions loaded from evaluation results.
     
     Args:
-        df: DataFrame with predictions
+        df: DataFrame with test predictions (loaded from evaluation results files)
         task: Classification task ('tissue' or 'inflammation')
         level: Level to calculate ROC for ('tile', 'particle', or 'slide')
         agg_strategy: Optional dictionary with optimal aggregation strategy information
     
     Returns:
-        Tuple of (fpr, tpr, auc_score)
+        Tuple of (fpr, tpr, auc_score) for test data
     """
     # Convert logits to probabilities if needed
     if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
@@ -237,9 +238,10 @@ def plot_combined_roc_curves(model_data: Dict[str, Dict[str, Tuple]],
                            sample_df: pd.DataFrame = None) -> None:
     """
     Plot combined ROC curves for multiple models with class identification.
+    This function combines and visualizes test performance results from multiple models.
     
     Args:
-        model_data: Dictionary of model data
+        model_data: Dictionary of test data results for multiple models
         task: Classification task
         level: Level to plot (tile, particle, or slide)
         output_path: Path to save the plot
@@ -395,7 +397,7 @@ def main():
                 
     # Modified plot_combined_roc_curves function to include aggregation strategy in the label
     def plot_combined_roc_curves_with_strategy(model_data, task, level, output_path, sample_df=None):
-        """Plot combined ROC curves showing the aggregation strategy used."""
+        """Plot combined ROC curves from test data showing the aggregation strategy used."""
         # Create scientific plot with square format
         plt.figure(figsize=(8, 8))
         
@@ -413,10 +415,10 @@ def main():
                 if level != 'tile' and 'strategy' in model_info:
                     strategy = model_info['strategy']
                     plt.plot(fpr, tpr, lw=2, color=color, 
-                            label=f'{model_name} ({strategy}, AUC = {roc_auc:.3f})')
+                            label=f'{model_name} ({strategy}, Test AUC = {roc_auc:.3f})')
                 else:
                     plt.plot(fpr, tpr, lw=2, color=color, 
-                            label=f'{model_name} (AUC = {roc_auc:.3f})')
+                            label=f'{model_name} (Test AUC = {roc_auc:.3f})')
         
         # Plot diagonal line
         plt.plot([0, 1], [0, 1], 'k--', lw=1.5)
@@ -434,9 +436,9 @@ def main():
         
         level_name = level.capitalize()
         if task == 'tissue':
-            title = f'{level_name}-Level ROC Curves - Tissue Classification\nPositive: {positive_class}, Negative: {negative_class}'
+            title = f'{level_name}-Level ROC Curves - Tissue Classification (Test Data)\nPositive: {positive_class}, Negative: {negative_class}'
         else:  # inflammation
-            title = f'{level_name}-Level ROC Curves - Inflammation Classification\nPositive: {positive_class}, Negative: {negative_class}'
+            title = f'{level_name}-Level ROC Curves - Inflammation Classification (Test Data)\nPositive: {positive_class}, Negative: {negative_class}'
         
         plt.title(title, fontsize=16)
         plt.legend(loc="lower right", fontsize=12)
@@ -452,6 +454,9 @@ def main():
         
         # Save figure with high resolution and extra padding for annotation
         plt.tight_layout()
+        
+        # Ensure output filename includes "test" to be explicit
+        output_path = output_path.parent / f"{output_path.stem}_test{output_path.suffix}"
         plt.savefig(output_path, dpi=300, bbox_inches='tight', pad_inches=0.5)
         plt.close()
     
@@ -461,7 +466,7 @@ def main():
             if level == 'slide':  # Skip invalid combination
                 continue
                 
-            output_path = output_dir / f'tissue_{level}_roc_comparison.png'
+            output_path = output_dir / f'tissue_{level}_test_roc_comparison.png'
             
             # Extract just the ROC curves for plotting
             plot_data = {}
@@ -481,7 +486,7 @@ def main():
             if level == 'particle':  # Skip invalid combination
                 continue
                 
-            output_path = output_dir / f'inflammation_{level}_roc_comparison.png'
+            output_path = output_dir / f'inflammation_{level}_test_roc_comparison.png'
             
             # Extract just the ROC curves for plotting
             plot_data = {}
