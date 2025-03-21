@@ -154,11 +154,12 @@ def evaluate_model(
         )
         logging.info("Validation-optimized thresholds calculated.")
 
-    # Log the validation thresholds
+    # Log the validation thresholds and AUCs separately
     logging.info("\nUsing validation-optimized thresholds:")
-    optimal_thresholds = {k: v for k, v in validation_thresholds.items()
-                        if k != "optimal_aggregation"}
-    for level, level_metrics in optimal_thresholds.items():
+    optimal_thresholds_dict = {k: v for k, v in validation_thresholds.items() 
+                             if k not in ['validation_tile_auroc', 'validation_slide_auroc', 
+                                        'validation_particle_auroc', 'optimal_aggregation']}
+    for level, level_metrics in optimal_thresholds_dict.items():
         if isinstance(level_metrics, dict) and 'threshold' in level_metrics:
             logging.info(f"{level.capitalize()} level: {level_metrics['threshold']:.3f}")
             logging.info(f"  Sensitivity: {level_metrics['sensitivity']:.2f}")
@@ -166,6 +167,11 @@ def evaluate_model(
             logging.info(f"  F1 Score: {level_metrics['f1']:.2f}")
         else:
             logging.info(f"{level.capitalize()} level: Invalid threshold format: {level_metrics}")
+
+    # Log validation AUCs separately
+    for auc_key in ['validation_tile_auroc', 'validation_slide_auroc', 'validation_particle_auroc']:
+        if auc_key in validation_thresholds:
+            logging.info(f"{auc_key.replace('_', ' ').capitalize()}: {validation_thresholds[auc_key]:.4f}")
 
     # Use validation-optimized aggregation strategy if available
     if "optimal_aggregation" in validation_thresholds:
@@ -214,7 +220,6 @@ def evaluate_model(
             agg_func = np.mean
     
         # Calculate probabilities from logits if needed and cache it
-        # This ensures consistent probability calculation across all aggregation strategies
         if 'prob' not in df.columns:
             if 'raw_pred' in df.columns:
                 if df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1:
@@ -240,13 +245,10 @@ def evaluate_model(
                 if inv_auc > 0.6:  # Significantly better when inverted
                     logging.warning("Detected inverted predictions, auto-correcting...")
                     df['prob'] = 1 - df['prob']
-                    # Also invert raw_pred if it's available
                     if 'raw_pred' in df.columns:
                         if df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1:
-                            # If logits, negate them
                             df['raw_pred'] = -df['raw_pred']
                         else:
-                            # If probabilities, invert them
                             df['raw_pred'] = 1 - df['raw_pred']
                     logging.info(f"Predictions inverted. New AUC: {inv_auc:.4f}")
         except Exception as e:
@@ -258,13 +260,10 @@ def evaluate_model(
                 'label': 'first'
             }).reset_index()
             
-            # Use 'prob' column for threshold application, not 'raw_pred'
-            # This ensures we're using probabilities for thresholding regardless of what the raw model outputs were
             if 'prob' in slide_df.columns:
                 slide_preds = (slide_df['prob'] > best_threshold).astype(int)
                 logging.info(f"Applied threshold {best_threshold:.4f} to slide-level probabilities")
             else:
-                # Fallback to raw_pred if prob isn't available (which should never happen)
                 logging.warning("No 'prob' column found in slide_df, using 'raw_pred' instead")
                 slide_preds = (slide_df['raw_pred'] > best_threshold).astype(int)
             
@@ -274,22 +273,16 @@ def evaluate_model(
                 logging.info(f"Optimal aggregation AUC: {optimal_agg_auc:.4f}")
             except Exception as e:
                 logging.warning(f"Could not calculate AUC for optimal aggregation: {str(e)}")
-                optimal_agg_auc = 0.5  # Default for random classifier
+                optimal_agg_auc = 0.5
 
-            # Recalculate confusion matrix
             from sklearn.metrics import confusion_matrix
             tn, fp, fn, tp = confusion_matrix(slide_df['label'].values, slide_preds).ravel()
             
-            # Calculate accuracy and F1 score on test data
             test_accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
             test_sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
             test_specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-            if tp + fp + fn == 0:
-                test_f1 = 0
-            else:
-                test_f1 = 2 * tp / (2 * tp + fp + fn)
+            test_f1 = 2 * tp / (2 * tp + fp + fn) if (tp + fp + fn) > 0 else 0
             
-            # Create test confusion matrix
             agg_results['test_confusion_matrix'] = {
                 'tp': int(tp),
                 'tn': int(tn),
@@ -304,7 +297,6 @@ def evaluate_model(
                 'auc': float(optimal_agg_auc)
             }
             
-            # Update the metrics with test confusion matrix for reporting
             agg_results['best_metrics']['tp'] = int(tp)
             agg_results['best_metrics']['tn'] = int(tn)
             agg_results['best_metrics']['fp'] = int(fp)
@@ -316,7 +308,6 @@ def evaluate_model(
             agg_results['best_metrics']['balanced_acc'] = float((test_sensitivity + test_specificity) / 2)
             agg_results['best_metrics']['auc'] = float(optimal_agg_auc)
             
-            # Log test confusion matrix
             logging.info("\nTest Confusion Matrix:")
             logging.info(f"  True Positives: {tp}")
             logging.info(f"  True Negatives: {tn}")
@@ -328,19 +319,15 @@ def evaluate_model(
             logging.info(f"  AUC: {optimal_agg_auc:.4f}")
         
         elif task == 'tissue':
-            # Similar code for tissue task with particle grouping
             particle_df = df.groupby(['slide_name', 'particle_id']).agg({
                 'prob': agg_func,
                 'label': 'first'
             }).reset_index()
             
-            # Use 'prob' column for threshold application, not 'raw_pred'
-            # This ensures we're using probabilities for thresholding regardless of what the raw model outputs were
             if 'prob' in particle_df.columns:
                 particle_preds = (particle_df['prob'] > best_threshold).astype(int)
                 logging.info(f"Applied threshold {best_threshold:.4f} to particle-level probabilities")
             else:
-                # Fallback to raw_pred if prob isn't available (which should never happen after our fixes)
                 logging.warning("No 'prob' column found in particle_df, using 'raw_pred' instead")
                 particle_preds = (particle_df['raw_pred'] > best_threshold).astype(int)
             
@@ -350,22 +337,16 @@ def evaluate_model(
                 logging.info(f"Optimal aggregation AUC: {optimal_agg_auc:.4f}")
             except Exception as e:
                 logging.warning(f"Could not calculate AUC for optimal aggregation: {str(e)}")
-                optimal_agg_auc = 0.5  # Default for random classifier
+                optimal_agg_auc = 0.5
 
-            # Recalculate confusion matrix
             from sklearn.metrics import confusion_matrix
             tn, fp, fn, tp = confusion_matrix(particle_df['label'].values, particle_preds).ravel()
             
-            # Calculate accuracy and F1 score on test data
             test_accuracy = (tp + tn) / (tp + tn + fp + fn) if (tp + tn + fp + fn) > 0 else 0
             test_sensitivity = tp / (tp + fn) if (tp + fn) > 0 else 0
             test_specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-            if tp + fp + fn == 0:
-                test_f1 = 0
-            else:
-                test_f1 = 2 * tp / (2 * tp + fp + fn)
+            test_f1 = 2 * tp / (2 * tp + fp + fn) if (tp + fp + fn) > 0 else 0
                 
-            # Create test confusion matrix
             agg_results['test_confusion_matrix'] = {
                 'tp': int(tp),
                 'tn': int(tn),
@@ -380,7 +361,6 @@ def evaluate_model(
                 'auc': float(optimal_agg_auc)
             }
             
-            # Update the metrics with test confusion matrix for reporting
             agg_results['best_metrics']['tp'] = int(tp)
             agg_results['best_metrics']['tn'] = int(tn)
             agg_results['best_metrics']['fp'] = int(fp)
@@ -392,7 +372,6 @@ def evaluate_model(
             agg_results['best_metrics']['balanced_acc'] = float((test_sensitivity + test_specificity) / 2)
             agg_results['best_metrics']['auc'] = float(optimal_agg_auc)
             
-            # Log test confusion matrix
             logging.info("\nTest Confusion Matrix:")
             logging.info(f"  True Positives: {tp}")
             logging.info(f"  True Negatives: {tn}")
@@ -403,7 +382,6 @@ def evaluate_model(
             logging.info(f"  F1 Score: {test_f1:.4f}")
             logging.info(f"  AUC: {optimal_agg_auc:.4f}")
     else:
-        # Never optimize on test data - either use validation thresholds or defaults
         logging.info("\nNo pre-computed aggregation strategy found in validation thresholds.")
         agg_results = validation_thresholds.get("optimal_aggregation", {})
         if not agg_results:
@@ -425,28 +403,22 @@ def evaluate_model(
     
     # Create enhanced distribution plots
     if output_dir:
-        # Convert logits to probabilities
         probs = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
         
-        # Create figure with two subplots
         plt.figure(figsize=(16, 7))
         
-        # First subplot - Raw logits distribution by class
         plt.subplot(1, 2, 1)
         plt.hist(df['raw_pred'][df['label']==1], bins=50, alpha=0.6, label='Positive class', color='blue')
         plt.hist(df['raw_pred'][df['label']==0], bins=50, alpha=0.6, label='Negative class', color='orange')
         plt.axvline(x=0.0, color='r', linestyle='--', label='Default threshold (logit=0)')
         
-        # Add optimal threshold from hierarchical optimization (if available)
-        if task == 'inflammation' and 'slide' in optimal_thresholds:
-            # Convert probability to logit for visualization
-            prob_threshold = optimal_thresholds['slide']['threshold']
+        if task == 'inflammation' and 'slide' in optimal_thresholds_dict:
+            prob_threshold = optimal_thresholds_dict['slide']['threshold']
             logit_threshold = np.log(prob_threshold/(1-prob_threshold)) if 0 < prob_threshold < 1 else (10 if prob_threshold >= 1 else -10)
             plt.axvline(x=logit_threshold, color='g', linestyle='--', 
                       label=f'Optimal threshold (logit={logit_threshold:.2f})')
-        elif task == 'tissue' and 'particle' in optimal_thresholds:
-            # Convert probability to logit for visualization
-            prob_threshold = optimal_thresholds['particle']['threshold']
+        elif task == 'tissue' and 'particle' in optimal_thresholds_dict:
+            prob_threshold = optimal_thresholds_dict['particle']['threshold']
             logit_threshold = np.log(prob_threshold/(1-prob_threshold)) if 0 < prob_threshold < 1 else (10 if prob_threshold >= 1 else -10)
             plt.axvline(x=logit_threshold, color='g', linestyle='--', 
                       label=f'Optimal threshold (logit={logit_threshold:.2f})')
@@ -456,21 +428,18 @@ def evaluate_model(
         plt.ylabel('Count')
         plt.legend()
         
-        # Second subplot - Probability distribution by class
         plt.subplot(1, 2, 2)
         plt.hist(probs[df['label']==1], bins=50, alpha=0.6, label='Positive class', color='blue')
         plt.hist(probs[df['label']==0], bins=50, alpha=0.6, label='Negative class', color='orange')
         plt.axvline(x=0.5, color='r', linestyle='--', label='Default threshold (prob=0.5)')
         
-        # Add optimal threshold
-        if task == 'inflammation' and 'slide' in optimal_thresholds:
-            plt.axvline(x=optimal_thresholds['slide']['threshold'], color='g', linestyle='--', 
-                      label=f'Optimal threshold (prob={optimal_thresholds["slide"]["threshold"]:.2f})')
-        elif task == 'tissue' and 'particle' in optimal_thresholds:
-            plt.axvline(x=optimal_thresholds['particle']['threshold'], color='g', linestyle='--', 
-                      label=f'Optimal threshold (prob={optimal_thresholds["particle"]["threshold"]:.2f})')
+        if task == 'inflammation' and 'slide' in optimal_thresholds_dict:
+            plt.axvline(x=optimal_thresholds_dict['slide']['threshold'], color='g', linestyle='--', 
+                      label=f'Optimal threshold (prob={optimal_thresholds_dict["slide"]["threshold"]:.2f})')
+        elif task == 'tissue' and 'particle' in optimal_thresholds_dict:
+            plt.axvline(x=optimal_thresholds_dict['particle']['threshold'], color='g', linestyle='--', 
+                      label=f'Optimal threshold (prob={optimal_thresholds_dict["particle"]["threshold"]:.2f})')
         
-        # Add optimal aggregation threshold if available
         if 'threshold' in best_metrics:
             plt.axvline(x=best_metrics['threshold'], color='purple', linestyle='-.', 
                       label=f'Best agg. threshold (prob={best_metrics["threshold"]:.2f})')
@@ -485,39 +454,38 @@ def evaluate_model(
         plt.close()
     
     # Calculate metrics using validation-optimized thresholds
-    if 'slide' in optimal_thresholds:
-        slide_threshold = optimal_thresholds['slide']['threshold']
-        
-        # Check if our predictions are logits or probabilities
+    if 'slide' in optimal_thresholds_dict:
+        slide_threshold = optimal_thresholds_dict['slide']['threshold']
         if df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1:
-            # If we have logits, convert the probability threshold to a logit threshold
             threshold_for_metrics = np.log(slide_threshold/(1-slide_threshold)) if 0 < slide_threshold < 1 else 0.0
             logging.info(f"Predictions are logits - converting probability threshold {slide_threshold:.4f} to logit threshold: {threshold_for_metrics:.4f}")
         else:
-            # If we have probabilities, use the probability threshold directly
             threshold_for_metrics = slide_threshold
             logging.info(f"Predictions are probabilities - using probability threshold directly: {threshold_for_metrics:.4f}")
     else:
-        # Default threshold should depend on whether we have logits or probabilities
         if df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1:
-            threshold_for_metrics = 0.0  # Default logit threshold = 0.0 (probability = 0.5)
+            threshold_for_metrics = 0.0
         else:
-            threshold_for_metrics = 0.5  # Default probability threshold = 0.5
+            threshold_for_metrics = 0.5
     
     # Calculate metrics using specified threshold
     metrics = metrics_utils.calculate_hierarchical_metrics(
         df=df,
         split=split,
         model_name=model_name,
-        threshold=threshold_for_metrics  # Use validation-optimized threshold if available
+        threshold=threshold_for_metrics
     )
     
-    # Combine results
+    # Combine results and elevate validation AUCs to top level
     combined_metrics = {
         **metrics,
-        'optimal_thresholds': optimal_thresholds,
-        'optimal_aggregation': agg_results  # Assume agg_results is calculated as before
+        'optimal_thresholds': optimal_thresholds_dict,
+        'optimal_aggregation': agg_results,
     }
+    # Elevate validation AUCs to top level
+    for auc_key in ['validation_tile_auroc', 'validation_slide_auroc', 'validation_particle_auroc']:
+        if auc_key in validation_thresholds:
+            combined_metrics[auc_key] = validation_thresholds[auc_key]
     
     return combined_metrics
 
