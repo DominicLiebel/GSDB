@@ -109,7 +109,7 @@ def load_config(config_path: Path, task: str) -> dict:
     if task == 'inflammation':
         result_config['batch_size'] = 32
         result_config['dropout_rate'] = 0.16141698206729396
-        result_config['epochs'] = 50
+        result_config['epochs'] = 20
         result_config['optimizer']['name'] = 'AdamW'
         result_config['optimizer']['learning_rate'] = 0.0001776588643563922
         result_config['optimizer']['weight_decay'] = 3.43776260302271e-05
@@ -119,7 +119,7 @@ def load_config(config_path: Path, task: str) -> dict:
     elif task == 'tissue':
         result_config['batch_size'] = 64
         result_config['dropout_rate'] = 0.0612284423470278
-        result_config['epochs'] = 50
+        result_config['epochs'] = 20
         result_config['optimizer']['name'] = 'AdamW'
         result_config['optimizer']['learning_rate'] = 0.00018943422706671847
         result_config['optimizer']['weight_decay'] = 1.0775930465603428e-05
@@ -171,6 +171,12 @@ def train_and_evaluate(args, paths):
     # Use the same seed as in evaluate.py
     set_seed(42)
     
+    # Map test_split to scanner name for directory naming (same as in evaluate.py)
+    scanner_name = {
+        'test': 'scanner1',
+        'test_scanner2': 'scanner2'
+    }.get(args.test_split, args.test_split)
+    
     if torch.cuda.is_available():
         device = torch.device('cuda')
         num_gpus = torch.cuda.device_count()
@@ -197,12 +203,6 @@ def train_and_evaluate(args, paths):
         if args.variant == "ModelConfig":
             logging.info("ModelConfig variant selected - using evaluate.py approach for exact same results")
             
-            # Map test_split to scanner name for directory naming (same as in evaluate.py)
-            scanner_name = {
-                'test': 'scanner1',
-                'test_scanner2': 'scanner2'
-            }.get(args.test_split, args.test_split)
-            
             # Create evaluation directory with similar naming convention to evaluate.py
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_dir = paths["EXPERIMENTS_DIR"] / f'{args.task}_{scanner_name}_densenet121_{timestamp}'
@@ -215,7 +215,7 @@ def train_and_evaluate(args, paths):
             # Log implementation details
             logging.info(f"Implementation details:")
             logging.info(f"  Architecture: densenet121")
-            logging.info(f"  Epochs: {config.get('epochs', 50)}")
+            logging.info(f"  Epochs: {config.get('epochs', 20)}")
             logging.info(f"  Optimizer: {config.get('optimizer', {}).get('name', 'AdamW')}")
             logging.info(f"  Learning Rate: {config.get('optimizer', {}).get('learning_rate', 0.0002)}")
             logging.info(f"  Batch Size: {config.get('batch_size', 32)}")
@@ -236,10 +236,9 @@ def train_and_evaluate(args, paths):
                 validation_dir = output_dir / "validation_thresholds"
                 validation_dir.mkdir(exist_ok=True)
                 
-                # For ModelConfig, use actual model paths from the evaluate.py results
                 # This ensures identical thresholds for both approaches
                 if args.task == 'inflammation':
-                    threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/inflammation_scanner1_densenet121_20250317_232234/validation_thresholds/thresholds.json')
+                    threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/inflammation_scanner1_densenet121_20250321_192836/validation_thresholds/validation_thresholds.json')
                 else:  # tissue task
                     threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/tissue_scanner1_densenet121_20250317_225530/validation_thresholds/thresholds.json')
                 
@@ -303,15 +302,17 @@ def train_and_evaluate(args, paths):
                 
                 # Add implementation details to metrics
                 metrics["implementation_details"] = {
-                    "epochs": config.get('epochs', 50),
+                    "epochs": config.get('epochs', 20),
                     "optimizer": config.get('optimizer', {}).get('name', 'AdamW'),
                     "learning_rate": config.get('optimizer', {}).get('learning_rate', 0.0002),
                     "batch_size": config.get('batch_size', 32),
                     "pos_class_weight": config.get('pos_weight', 0.5)
                 }
                 
-                # Save metrics using the same approach as evaluate.py
-                metrics_utils.save_metrics(metrics, output_dir)
+                # Save metrics to variant-specific directory
+                metrics_utils.save_metrics(metrics, variant_output_dir)
+                with open(variant_output_dir / f"history_{variant_name}.json", 'w') as f:
+                    json.dump(history, f, indent=2)
                 
                 # Create ROC curves
                 if 'predictions_df' in metrics:
@@ -340,7 +341,10 @@ def train_and_evaluate(args, paths):
     roc_agg_all = {}
 
     for variant_name, aug_params in augmentation_variants.items():
-        logging.info(f"--- {args.task.capitalize()} Variant: {variant_name} ---")
+        # Create a unique directory for this run
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        variant_output_dir = paths["EXPERIMENTS_DIR"] / f'{args.task}_{scanner_name}_{variant_name}_{timestamp}'
+        variant_output_dir.mkdir(parents=True, exist_ok=True)
 
         if aug_params["only_normalization"]:
             train_transform = [
@@ -603,9 +607,9 @@ def train_and_evaluate(args, paths):
 
         # Load pre-computed thresholds based on task
         if args.task == 'inflammation':
-            threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/inflammation_scanner1_densenet121_20250317_232234/validation_thresholds/thresholds.json')
+            threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/inflammation_scanner1_densenet121_20250321_192836/validation_thresholds/validation_thresholds.json')
         else:  # tissue task
-            threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/tissue_scanner1_densenet121_20250317_225530/validation_thresholds/thresholds.json')
+            threshold_path = Path('/mnt/data/dliebel/2024_dliebel/tODO CHANGE THIS PATH')
 
         # Load the pre-computed thresholds
         if threshold_path.exists():
@@ -721,7 +725,6 @@ def train_and_evaluate(args, paths):
             roc_tile_all[variant_name] = (np.array([0, 1]), np.array([0, 1]), 0.5)
             roc_agg_all[variant_name] = (np.array([0, 1]), np.array([0, 1]), 0.5)
         
-        scanner_name = "Scanner1" if args.test_split == 'test' else "Scanner2"
         level = "Slide" if args.task == 'inflammation' else "Particle"
         
         # Define aggregation method name based on task
@@ -823,7 +826,6 @@ def train_and_evaluate(args, paths):
     # This block is OUTSIDE the variant loop
     if not args.variant and len(augmentation_variants) > 1:
         # Comparison plots for all variants
-        scanner_name = "Scanner1" if args.test_split == 'test' else "Scanner2"
         level = "Slide" if args.task == 'inflammation' else "Particle"
         
         # Tile-level comparison
