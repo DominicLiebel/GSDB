@@ -240,7 +240,7 @@ def train_and_evaluate(args, paths):
                 if args.task == 'inflammation':
                     threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/inflammation_scanner1_densenet121_20250321_192836/validation_thresholds/validation_thresholds.json')
                 else:  # tissue task
-                    threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/tissue_scanner1_densenet121_20250317_225530/validation_thresholds/thresholds.json')
+                    threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/tissue_scanner1_densenet121_20250321_201315/validation_thresholds/validation_thresholds.json')
                 
                 # Load the validation thresholds
                 if threshold_path.exists():
@@ -609,7 +609,7 @@ def train_and_evaluate(args, paths):
         if args.task == 'inflammation':
             threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/inflammation_scanner1_densenet121_20250321_192836/validation_thresholds/validation_thresholds.json')
         else:  # tissue task
-            threshold_path = Path('/mnt/data/dliebel/2024_dliebel/tODO CHANGE THIS PATH')
+            threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/tissue_scanner1_densenet121_20250321_201315/validation_thresholds/validation_thresholds.json')
 
         # Load the pre-computed thresholds
         if threshold_path.exists():
