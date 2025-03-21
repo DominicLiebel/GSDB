@@ -87,10 +87,18 @@ class StainColorJitter:
 def setup_logging(output_dir: Path) -> None:
     """Configure logging for both file and console output."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    log_file = output_dir / 'logs/experiment.log'
+    
+    # Create logs subdirectory
+    logs_dir = output_dir / 'logs'
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    
+    log_file = logs_dir / 'experiment.log'
+    
+    # Configure logging
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
+        format=log_format,
         handlers=[logging.FileHandler(log_file), logging.StreamHandler()]
     )
     logging.info(f"Logging configured. Log file: {log_file}")
@@ -227,8 +235,25 @@ def train_and_evaluate(args, paths):
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
                 logging.info(f"Using device: {device}")
                 
-                # Create path for model weights
-                model_path = paths["MODELS_DIR"] / f"densenet121_{args.task}_ModelConfig_best.pt"
+                # Check multiple locations for existing models
+                model_path_options = [
+                    paths["MODELS_DIR"] / f"best_model_{args.task}_densenet121.pt",
+                    paths["EXPERIMENT_MODELS_DIR"] / f"best_model_{args.task}_densenet121.pt",
+                    paths["EXPERIMENT_MODELS_DIR"] / f"densenet121_{args.task}_ModelConfig_best.pt"
+                ]
+                
+                model_path = None
+                for path_option in model_path_options:
+                    if path_option.exists():
+                        model_path = path_option
+                        logging.info(f"Found existing model at: {model_path}")
+                        break
+                        
+                if model_path is None:
+                    # Default to the new path if no existing model is found
+                    model_path = paths["EXPERIMENT_MODELS_DIR"] / f"densenet121_{args.task}_ModelConfig_best.pt"
+                    logging.warning(f"No existing model found. Will attempt to train and save to: {model_path}")
+                logging.info(f"Looking for model at: {model_path}")
                 
                 # Load model
                 model = load_model(model_path, device, 'densenet121')
@@ -587,7 +612,7 @@ def train_and_evaluate(args, paths):
             if val_metrics['loss'] < best_val_loss:
                 best_val_loss = val_metrics['loss']
                 epochs_no_improve = 0
-                model_path = paths["MODELS_DIR"] / f"densenet121_{args.task}_{variant_name}_best.pt"
+                model_path = paths["EXPERIMENT_MODELS_DIR"] / f"densenet121_{args.task}_{variant_name}_best.pt"
                 training_utils.save_checkpoint(
                     model, optimizer, epoch, val_metrics, config, str(model_path), seed=42
                 )
@@ -824,7 +849,10 @@ if __name__ == "__main__":
     paths["MODELS_DIR"].mkdir(parents=True, exist_ok=True)
     paths["FIGURES_DIR"] = paths.get("FIGURES_DIR", paths["EXPERIMENTS_DIR"] / "figures")
     paths["FIGURES_DIR"].mkdir(parents=True, exist_ok=True)
-    setup_logging(paths["EXPERIMENTS_DIR"])
+    paths["EXPERIMENT_MODELS_DIR"] = paths["EXPERIMENTS_DIR"] / "models"
+    paths["EXPERIMENT_MODELS_DIR"].mkdir(parents=True, exist_ok=True)
+    logging.info(f"Models will be saved to: {paths['EXPERIMENT_MODELS_DIR']}")
+    
 
     all_tasks = ["inflammation", "tissue"] if args.task == "all" else [args.task]
     all_test_splits = ["test", "test_scanner2"] if args.test_split == "all" else [args.test_split]

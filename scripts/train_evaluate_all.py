@@ -44,8 +44,8 @@ def parse_args():
     parser.add_argument("--project-root", type=Path, default=Path.cwd(),
                         help="Project root directory")
     parser.add_argument("--eval-dataset", choices=["test", "test_scanner2", "all"], 
-                        default="test",
-                        help="Dataset to use for evaluation (default: test)")
+                        default="all",
+                        help="Dataset to use for evaluation (default: all)")
     return parser.parse_args()
 
 def setup_logging(task, log_dir):
