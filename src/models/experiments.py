@@ -185,7 +185,6 @@ def train_and_evaluate(args, paths):
         "ColorJitter": {"use_medmnist_aug": False, "use_stain_color_jitter": True, "only_normalization": False, "use_model_config": False},
         "ModelConfig": {"use_medmnist_aug": False, "use_stain_color_jitter": False, "only_normalization": False, "use_model_config": True},
         "Medmnist_ColorJitter": {"use_medmnist_aug": True, "use_stain_color_jitter": True, "only_normalization": False, "use_model_config": False},
-        "All": {"use_medmnist_aug": True, "use_stain_color_jitter": True, "only_normalization": False, "use_model_config": True},
         "NormalizationOnly": {"use_medmnist_aug": False, "use_stain_color_jitter": False, "only_normalization": True, "use_model_config": False}   
     }
     
@@ -316,27 +315,18 @@ def train_and_evaluate(args, paths):
                 
                 # Create ROC curves
                 if 'predictions_df' in metrics:
-                    df = metrics['predictions_df']
-                    # Use metrics_utils.plot_roc_curves just like in evaluate.py
-                    metrics_utils.plot_roc_curves(
-                        df,
-                        args.task,
-                        output_dir,
-                        metrics.get('optimal_aggregation', None)
-                    )
-                else:
-                    logging.warning("Could not find predictions DataFrame in metrics. Skipping ROC curve generation.")
-                
-                # Create precision-recall curves
-                if 'predictions_df' in metrics:
                     try:
-                        evaluate.plot_precision_recall_curve(metrics['predictions_df'], args.task, output_dir)
-                        logging.info("Precision-recall curves saved successfully")
+                        plot_roc_curves(
+                            metrics['predictions_df'], 
+                            task, 
+                            output_dir,
+                            metrics.get('optimal_aggregation', None),
+                            metrics  # Pass the entire metrics dictionary 
+                        )
+                        logging.info("ROC curves saved successfully")
                     except Exception as e:
-                        logging.warning(f"Failed to create precision-recall curves: {str(e)}")
-                else:
-                    logging.warning("Could not find predictions DataFrame in metrics. Skipping precision-recall curve generation.")
-                    
+                        logging.warning(f"Failed to create ROC curves: {str(e)}")
+                
                 logging.info("ModelConfig evaluation completed successfully!")
                 
                 # Return from the function early since we've completed the evaluation
@@ -859,7 +849,7 @@ def parse_args():
                         help="Task to run or 'all' for both (default: all)")
     parser.add_argument("--test_split", choices=["test", "test_scanner2", "all"], default="all",
                         help="Test split to use or 'all' for both (default: all)")
-    parser.add_argument("--variant", choices=["Medmnist", "ColorJitter", "ModelConfig", "Medmnist_ColorJitter", "All", "NormalizationOnly"],
+    parser.add_argument("--variant", choices=["Medmnist", "ColorJitter", "ModelConfig", "Medmnist_ColorJitter", "NormalizationOnly"],
                         default=None, help="Optional: Specific augmentation variant to test (default: all)")
     parser = add_path_args(parser)
     return parser.parse_args()

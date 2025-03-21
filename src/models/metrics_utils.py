@@ -948,26 +948,29 @@ def save_metrics(metrics: Dict, output_dir: Path) -> None:
     summary_path = output_dir / "metrics_summary.txt"
     create_summary_file(metrics, summary_path)
 
-def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path, optimal_aggregation: Optional[Dict] = None) -> None:
-    """Plot ROC curves for different hierarchical levels using optimal aggregation strategy.
-    
-    Args:
-        df: DataFrame with test predictions (not validation)
-        task: Classification task
-        output_dir: Directory to save plots
-        optimal_aggregation: Optional dictionary with optimal aggregation strategy
-    """
+def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path, 
+                   optimal_aggregation: Optional[Dict] = None,
+                   metrics: Optional[Dict] = None):
+    """Plot ROC curves using consistent AUC values from the metrics dictionary."""
     from sklearn.metrics import roc_curve, auc
     
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Get the optimal aggregation function
+    # Force use of pre-calculated metrics if available
+    use_precalculated = False
+    if metrics and 'tile_auroc' in metrics:
+        use_precalculated = True
+        logging.info(f"Will use pre-calculated metrics: tile_auroc={metrics['tile_auroc']:.4f}")
+    else:
+        logging.warning("No pre-calculated metrics found, will calculate AUC values")
+    
+    # Get aggregation function
     agg_strategy = None
     if optimal_aggregation and 'best_strategy' in optimal_aggregation:
         agg_strategy = optimal_aggregation['best_strategy']
         
-    # Define aggregation function based on strategy
+    # Define aggregation function
     if agg_strategy == 'median':
         agg_func = np.median
     elif agg_strategy == 'top_k_mean_10':
@@ -977,76 +980,110 @@ def plot_roc_curves(df: pd.DataFrame, task: str, output_dir: Path, optimal_aggre
     elif agg_strategy == 'top_k_mean_30':
         agg_func = lambda x: np.mean(np.sort(x)[-int(max(1, len(x)*0.3)):]) if len(x) > 0 else 0
     else:
-        # Default to mean if no strategy provided or unknown strategy
         agg_func = np.mean
     
-    # Convert logits to probabilities if needed and add to dataframe for aggregation
+    # Ensure probabilities are available
     if 'prob' not in df.columns:
         if 'raw_pred' in df.columns and (df['raw_pred'].min() < 0 or df['raw_pred'].max() > 1):
             df['prob'] = torch.sigmoid(torch.tensor(df['raw_pred'].values)).numpy()
         else:
             df['prob'] = df['raw_pred'].values
     
+    # Calculate ROC curves (regardless of whether we'll use pre-calculated AUC)
     tile_fpr, tile_tpr, _ = roc_curve(df['label'], df['prob'])
-    tile_auc = auc(tile_fpr, tile_tpr)
+    
+    # CRITICAL: Always use pre-calculated AUC when available
+    if use_precalculated:
+        tile_auc = metrics['tile_auroc']
+        logging.info(f"Using pre-calculated tile AUC: {tile_auc:.4f}")
+    else:
+        tile_auc = auc(tile_fpr, tile_tpr)
+        logging.info(f"Calculated tile AUC: {tile_auc:.4f} for ROC curve")
     
     # Create figure
     plt.figure(figsize=(10, 8))
     
-    # Plot tile-level ROC
+    # Plot tile-level ROC with consistent AUC
     plt.plot(tile_fpr, tile_tpr, 
-             label=f'Tile-level (Test AUC = {tile_auc:.3f})',  # Explicitly label as test data
+             label=f'Tile-level (AUC = {tile_auc:.3f})',
              linewidth=2)
     
-    # Calculate and plot higher-level ROC (slide or particle)
+    # Higher level metrics (slide or particle)
     if task == 'inflammation':
-        # Slide-level analysis using optimal aggregation
+        # Slide-level aggregation
         slide_df = df.groupby('slide_name').agg({
             'prob': agg_func,
             'label': 'first'
         }).reset_index()
         
-        # Calculate ROC
         slide_fpr, slide_tpr, _ = roc_curve(slide_df['label'], slide_df['prob'])
-        slide_auc = auc(slide_fpr, slide_tpr)
         
-        # Include aggregation strategy in label if available
+        # Priority for slide AUC:
+        # 1. Use optimal_aggregation test_confusion_matrix auc if available
+        # 2. Fall back to slide_auroc
+        # 3. Calculate from data as last resort
+        if use_precalculated:
+            if (optimal_aggregation and 
+                'test_confusion_matrix' in optimal_aggregation and
+                'auc' in optimal_aggregation['test_confusion_matrix']):
+                slide_auc = optimal_aggregation['test_confusion_matrix']['auc']
+                logging.info(f"Using optimal aggregation AUC: {slide_auc:.4f}")
+            elif 'slide_auroc' in metrics:
+                slide_auc = metrics['slide_auroc']
+                logging.info(f"Using pre-calculated slide AUC: {slide_auc:.4f}")
+            else:
+                slide_auc = auc(slide_fpr, slide_tpr)
+                logging.info(f"Calculated slide AUC: {slide_auc:.4f} for ROC curve")
+        else:
+            slide_auc = auc(slide_fpr, slide_tpr)
+            logging.info(f"Calculated slide AUC: {slide_auc:.4f} for ROC curve")
+        
         strategy_label = f" using {agg_strategy}" if agg_strategy else ""
-        
-        # Plot with explicit test AUC label
         plt.plot(slide_fpr, slide_tpr, 
-                 label=f'Slide-level{strategy_label} (Test AUC = {slide_auc:.3f})',
+                 label=f'Slide-level{strategy_label} (AUC = {slide_auc:.3f})',
                  linewidth=2)
-    
-    else:  # tissue task
-        # Particle-level analysis using optimal aggregation
+    else:
+        # Particle-level for tissue task
         particle_df = df.groupby(['slide_name', 'particle_id']).agg({
             'prob': agg_func,
             'label': 'first'
         }).reset_index()
         
-        # Calculate ROC
         particle_fpr, particle_tpr, _ = roc_curve(particle_df['label'], particle_df['prob'])
-        particle_auc = auc(particle_fpr, particle_tpr)
         
-        # Include aggregation strategy in label if available
+        # Priority for particle AUC:
+        # 1. Use optimal_aggregation test_confusion_matrix auc if available
+        # 2. Fall back to particle_auroc
+        # 3. Calculate from data as last resort
+        if use_precalculated:
+            if (optimal_aggregation and 
+                'test_confusion_matrix' in optimal_aggregation and
+                'auc' in optimal_aggregation['test_confusion_matrix']):
+                particle_auc = optimal_aggregation['test_confusion_matrix']['auc']
+                logging.info(f"Using optimal aggregation AUC: {particle_auc:.4f}")
+            elif 'particle_auroc' in metrics:
+                particle_auc = metrics['particle_auroc']
+                logging.info(f"Using pre-calculated particle AUC: {particle_auc:.4f}")
+            else:
+                particle_auc = auc(particle_fpr, particle_tpr)
+                logging.info(f"Calculated particle AUC: {particle_auc:.4f} for ROC curve")
+        else:
+            particle_auc = auc(particle_fpr, particle_tpr)
+            logging.info(f"Calculated particle AUC: {particle_auc:.4f} for ROC curve")
+        
         strategy_label = f" using {agg_strategy}" if agg_strategy else ""
-        
-        # Plot with explicit test AUC label
         plt.plot(particle_fpr, particle_tpr, 
-                 label=f'Particle-level{strategy_label} (Test AUC = {particle_auc:.3f})',
+                 label=f'Particle-level{strategy_label} (AUC = {particle_auc:.3f})',
                  linewidth=2)
     
     plt.plot([0, 1], [0, 1], 'k--', label='Random classifier')
     plt.xlabel('False Positive Rate', fontsize=12)
     plt.ylabel('True Positive Rate', fontsize=12)
-    
-    # Add clarity to title to specify these are test results
     plt.title(f'ROC Curves for {task.capitalize()} Classification (Test Data)', fontsize=14)
     plt.legend(loc='lower right', fontsize=10)
     plt.grid(True, alpha=0.3)
     
-    # Save figure with explicit 'test' in filename
+    # Save the plot
     try:
         save_path = output_dir / f'{task}_test_roc_curves.png'
         plt.savefig(save_path, dpi=300)
@@ -1344,7 +1381,13 @@ def create_summary_file(metrics, output_path):
                 precision = tp / (tp + fp) if (tp + fp) > 0 else 0
                 f1 = (2 * precision * sensitivity / (precision + sensitivity) 
                       if (precision + sensitivity) > 0 else 0)
-                auc = metrics.get(auc_key, 0)  # AUC from metrics dictionary using the correct key
+                
+                # Get AUC directly from the test_confusion_matrix if available
+                if 'auc' in agg_cm:
+                    auc = agg_cm['auc']
+                else:
+                    # Fallback to metrics dictionary
+                    auc = metrics.get(auc_key, 0)
                 
                 # Write calculated metrics
                 f.write(f"{higher_level}-Level Accuracy: {accuracy:.2%}\n")

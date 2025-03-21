@@ -865,28 +865,18 @@ def main():
         
         # Create ROC curves and precision-recall curves
         if 'predictions_df' in metrics:
-            df = metrics['predictions_df']
-            # Use the metrics_utils version and pass the optimal aggregation
-            metrics_utils.plot_roc_curves(
-                df, 
-                args.task, 
-                output_dir,
-                metrics.get('optimal_aggregation', None)
-            )
-        else:
-            logging.warning("Could not find predictions DataFrame in metrics. Skipping ROC curve generation.")
-            
-        # Create precision-recall curves
-        if 'predictions_df' in metrics:
             try:
-                plot_precision_recall_curve(metrics['predictions_df'], args.task, output_dir)
-                logging.info("Precision-recall curves saved successfully")
+                # Pass the complete metrics dictionary
+                metrics_utils.plot_roc_curves(
+                    metrics['predictions_df'],  # This is the correct variable reference
+                    args.task, 
+                    output_dir,
+                    metrics.get('optimal_aggregation', None),
+                    metrics
+                )
+                logging.info("ROC curves generated with consistent metrics")
             except Exception as e:
-                logging.warning(f"Failed to create precision-recall curves: {str(e)}")
-        else:
-            logging.warning("Could not find predictions DataFrame in metrics. Skipping precision-recall curve generation.")
-        
-        logging.info("Evaluation completed successfully!")
+                logging.warning(f"Failed to create ROC curves: {str(e)}")
         
     except Exception as e:
         logging.error(f"Evaluation failed: {str(e)}")
