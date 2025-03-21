@@ -1265,10 +1265,8 @@ def calculate_validation_thresholds(model_path: Optional[Path] = None, model: Op
     return validation_optimized
 
 def create_summary_file(metrics: Dict, output_dir: Path):
-    """Create a human-readable summary file of metrics with LaTeX-friendly formatting."""
+    """Create a human-readable summary file of metrics."""
     summary_file = output_dir / "metrics_summary.txt"
-    latex_summary_file = output_dir / "metrics_latex.txt"
-    
     with open(summary_file, 'w') as f:
         # Write header
         f.write("Histology Classification Metrics Summary\n")
@@ -1434,71 +1432,5 @@ def create_summary_file(metrics: Dict, output_dir: Path):
             f.write(f"  False Negatives: {agg['test_confusion_matrix'].get('fn', 0)}\n")
             f.write(f"  Total Samples: {agg['test_confusion_matrix'].get('total', 0)}\n")
 
-    # Create LaTeX-friendly version with the same format
-    with open(latex_summary_file, 'w') as f:
-        # Format model name for LaTeX
-        model_name = metrics.get('model_name', 'Unknown')
-        if model_name.startswith('gigapath'):
-            model_name = 'GigaPath'
-        elif model_name.startswith('resnet'):
-            model_name = 'ResNet-18'
-        elif model_name.startswith('swin'):
-            model_name = 'Swin-V2-B'
-        elif model_name.startswith('convnext'):
-            model_name = 'ConvNeXt-L'
-        elif model_name.startswith('dense'):
-            if '169' in model_name:
-                model_name = 'DenseNet-169'
-            else:
-                model_name = 'DenseNet-121'
-                
-        task = metrics.get('task', 'unknown')
-        task_name = 'Inflammation' if task == 'inflammation' else 'Tissue Type'
-        
-        # Get test split name
-        split = metrics.get('split', 'unknown')
-        if split == 'test':
-            split_name = 'Scanner 1'
-        elif split == 'test_scanner2':
-            split_name = 'Scanner 2'
-        else:
-            split_name = split.capitalize()
-            
-        # Write LaTeX-ready model and task information
-        f.write("% LaTeX-ready metrics for tables\n")
-        f.write(f"% Model: {model_name}, Task: {task_name}, Split: {split_name}\n\n")
-        
-        # Format test metrics for LaTeX tables
-        f.write("% TEST METRICS - Copy these values directly to LaTeX tables\n")
-        
-        # Higher-level metrics (slide for inflammation, particle for tissue)
-        if task == 'inflammation':
-            # Extract validation and test AUC values
-            val_auroc = metrics.get('validation_slide_auroc', 0)
-            test_auroc = metrics.get('slide_auroc', 0)
-            
-            # Format LaTeX-friendly row
-            f.write("% For LaTeX table row (slide-level)\n")
-            f.write(f"{model_name} & {val_auroc:.1%}".strip('%') + " & ")
-            f.write(f"{test_auroc:.1%}".strip('%') + " & ")
-            f.write(f"{metrics.get('slide_accuracy', 0):.1%}".strip('%') + " & ")
-            f.write(f"{metrics.get('slide_sensitivity', 0):.1%}".strip('%') + " & ")
-            f.write(f"{metrics.get('slide_specificity', 0):.1%}".strip('%') + " & ")
-            f.write(f"{metrics.get('slide_f1', 0):.1%}".strip('%') + " \\\\\n")
-            
-        else:  # Tissue task
-            # Extract validation and test AUC values
-            val_auroc = metrics.get('validation_particle_auroc', 0)
-            test_auroc = metrics.get('particle_auroc', 0)
-            
-            # Format LaTeX-friendly row
-            f.write("% For LaTeX table row (particle-level)\n")
-            f.write(f"{model_name} & {val_auroc:.1%}".strip('%') + " & ")
-            f.write(f"{test_auroc:.1%}".strip('%') + " & ")
-            f.write(f"{metrics.get('particle_accuracy', 0):.1%}".strip('%') + " & ")
-            f.write(f"{metrics.get('particle_sensitivity', 0):.1%}".strip('%') + " & ")
-            f.write(f"{metrics.get('particle_specificity', 0):.1%}".strip('%') + " & ")
-            f.write(f"{metrics.get('particle_f1', 0):.1%}".strip('%') + " \\\\\n")
-                
-    logging.info(f"Created summary files at: {summary_file} and {latex_summary_file}")
+    logging.info(f"Created summary file at: {summary_file}")
     return summary_file
