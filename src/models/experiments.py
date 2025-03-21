@@ -87,18 +87,10 @@ class StainColorJitter:
 def setup_logging(output_dir: Path) -> None:
     """Configure logging for both file and console output."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Create logs subdirectory
-    logs_dir = output_dir / 'logs'
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    
-    log_file = logs_dir / 'experiment.log'
-    
-    # Configure logging
-    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    log_file = output_dir / 'logs/experiment.log'
     logging.basicConfig(
         level=logging.INFO,
-        format=log_format,
+        format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[logging.FileHandler(log_file), logging.StreamHandler()]
     )
     logging.info(f"Logging configured. Log file: {log_file}")
@@ -235,25 +227,8 @@ def train_and_evaluate(args, paths):
                 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
                 logging.info(f"Using device: {device}")
                 
-                # Check multiple locations for existing models
-                model_path_options = [
-                    paths["MODELS_DIR"] / f"best_model_{args.task}_densenet121.pt",
-                    paths["EXPERIMENT_MODELS_DIR"] / f"best_model_{args.task}_densenet121.pt",
-                    paths["EXPERIMENT_MODELS_DIR"] / f"densenet121_{args.task}_ModelConfig_best.pt"
-                ]
-                
-                model_path = None
-                for path_option in model_path_options:
-                    if path_option.exists():
-                        model_path = path_option
-                        logging.info(f"Found existing model at: {model_path}")
-                        break
-                        
-                if model_path is None:
-                    # Default to the new path if no existing model is found
-                    model_path = paths["EXPERIMENT_MODELS_DIR"] / f"densenet121_{args.task}_ModelConfig_best.pt"
-                    logging.warning(f"No existing model found. Will attempt to train and save to: {model_path}")
-                logging.info(f"Looking for model at: {model_path}")
+                # Create path for model weights
+                model_path = paths["MODELS_DIR"] / f"densenet121_{args.task}_ModelConfig_best.pt"
                 
                 # Load model
                 model = load_model(model_path, device, 'densenet121')
@@ -612,7 +587,7 @@ def train_and_evaluate(args, paths):
             if val_metrics['loss'] < best_val_loss:
                 best_val_loss = val_metrics['loss']
                 epochs_no_improve = 0
-                model_path = paths["EXPERIMENT_MODELS_DIR"] / f"densenet121_{args.task}_{variant_name}_best.pt"
+                model_path = paths["MODELS_DIR"] / f"densenet121_{args.task}_{variant_name}_best.pt"
                 training_utils.save_checkpoint(
                     model, optimizer, epoch, val_metrics, config, str(model_path), seed=42
                 )
@@ -782,15 +757,60 @@ def train_and_evaluate(args, paths):
         # Extract metrics for results file - only use metrics from evaluate.evaluate_model
         tile_metrics = {k: v for k, v in metrics.items() if k.startswith('tile_') and isinstance(v, (int, float, np.floating))}
         
-        # Use correct prefix based on task (slide for inflammation, particle for tissue)
+        # IMPORTANT: Extract test confusion matrix metrics directly if available
+        # This ensures all files report the same values: statistics.json, metrics_summary.txt, and results_*.txt
+        agg_metrics = {}
+        use_test_cm = False
+        
         if args.task == 'inflammation':
             agg_prefix = 'slide_'
-            agg_metrics = {k: v for k, v in metrics.items() if k.startswith(agg_prefix) and isinstance(v, (int, float, np.floating))}
-        else:
+            level_name = "SLIDE"
+            
+            # First try to use the test confusion matrix directly (most accurate)
+            if 'optimal_aggregation' in metrics and isinstance(metrics['optimal_aggregation'], dict):
+                if 'test_confusion_matrix' in metrics['optimal_aggregation']:
+                    test_cm = metrics['optimal_aggregation']['test_confusion_matrix']
+                    if isinstance(test_cm, dict):
+                        # Map the test confusion matrix metrics to slide metrics format
+                        agg_metrics = {
+                            'slide_accuracy': test_cm.get('accuracy', 0),
+                            'slide_sensitivity': test_cm.get('sensitivity', 0),
+                            'slide_specificity': test_cm.get('specificity', 0),
+                            'slide_f1': test_cm.get('f1', 0),
+                            'slide_auroc': test_cm.get('auc', 0)
+                        }
+                        use_test_cm = True
+                        logging.info("Using test confusion matrix metrics for results file - ensures consistency")
+            
+            # Fall back to metrics dict if test confusion matrix wasn't available
+            if not use_test_cm:
+                agg_metrics = {k: v for k, v in metrics.items() if k.startswith(agg_prefix) and isinstance(v, (int, float, np.floating))}
+                
+        else:  # tissue task
             agg_prefix = 'particle_'
-            agg_metrics = {k: v for k, v in metrics.items() if k.startswith(agg_prefix) and isinstance(v, (int, float, np.floating))}
+            level_name = "PARTICLE"
+            
+            # First try to use the test confusion matrix directly (most accurate)
+            if 'optimal_aggregation' in metrics and isinstance(metrics['optimal_aggregation'], dict):
+                if 'test_confusion_matrix' in metrics['optimal_aggregation']:
+                    test_cm = metrics['optimal_aggregation']['test_confusion_matrix']
+                    if isinstance(test_cm, dict):
+                        # Map the test confusion matrix metrics to particle metrics format
+                        agg_metrics = {
+                            'particle_accuracy': test_cm.get('accuracy', 0),
+                            'particle_sensitivity': test_cm.get('sensitivity', 0),
+                            'particle_specificity': test_cm.get('specificity', 0),
+                            'particle_f1': test_cm.get('f1', 0),
+                            'particle_auroc': test_cm.get('auc', 0)
+                        }
+                        use_test_cm = True
+                        logging.info("Using test confusion matrix metrics for results file - ensures consistency")
+            
+            # Fall back to metrics dict if test confusion matrix wasn't available
+            if not use_test_cm:
+                agg_metrics = {k: v for k, v in metrics.items() if k.startswith(agg_prefix) and isinstance(v, (int, float, np.floating))}
         
-        # Write results to text file - ensure consistency with evaluate.py
+        # Write results to text file - now with consistent metrics across all files
         with open(paths["EXPERIMENTS_DIR"] / f"results_{args.task}_{variant_name}_{args.test_split}.txt", 'w') as f:
             f.write(f"{args.task.upper()} RESULTS - Variant: {variant_name} - Scanner: {args.test_split}\n")
             f.write("========================================\n\n")
@@ -799,12 +819,16 @@ def train_and_evaluate(args, paths):
             for k, v in tile_metrics.items():
                 f.write(f"{k.replace('tile_', '').capitalize()}: {v:.3f}\n")
             
-            level_name = "SLIDE" if args.task == 'inflammation' else "PARTICLE"
             f.write(f"\nTEST DATASET - {level_name}-LEVEL METRICS\n")
             f.write("---------------------------------------------\n")
             for k, v in agg_metrics.items():
                 metric_name = k.replace(agg_prefix, '')
                 f.write(f"{metric_name.capitalize()}: {v:.3f}\n")
+                
+            # Add a note about the source of the metrics if we're using test_confusion_matrix
+            if use_test_cm:
+                f.write("\nNote: These metrics are calculated from the test confusion matrix\n")
+                f.write("after applying validation-optimized threshold and aggregation.\n")
 
     # This block is OUTSIDE the variant loop
     if not args.variant and len(augmentation_variants) > 1:
@@ -849,10 +873,7 @@ if __name__ == "__main__":
     paths["MODELS_DIR"].mkdir(parents=True, exist_ok=True)
     paths["FIGURES_DIR"] = paths.get("FIGURES_DIR", paths["EXPERIMENTS_DIR"] / "figures")
     paths["FIGURES_DIR"].mkdir(parents=True, exist_ok=True)
-    paths["EXPERIMENT_MODELS_DIR"] = paths["EXPERIMENTS_DIR"] / "models"
-    paths["EXPERIMENT_MODELS_DIR"].mkdir(parents=True, exist_ok=True)
-    logging.info(f"Models will be saved to: {paths['EXPERIMENT_MODELS_DIR']}")
-    
+    setup_logging(paths["EXPERIMENTS_DIR"])
 
     all_tasks = ["inflammation", "tissue"] if args.task == "all" else [args.task]
     all_test_splits = ["test", "test_scanner2"] if args.test_split == "all" else [args.test_split]
