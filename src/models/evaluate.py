@@ -94,11 +94,9 @@ def evaluate_model(
                 if is_logits:
                     # Convert logits to probabilities
                     probs = torch.sigmoid(outputs)
-                    logging.info(f"Model outputs appear to be logits (range: {min_val:.4f} to {max_val:.4f}), converting to probabilities")
                 else:
                     # Already probabilities
                     probs = outputs
-                    logging.info(f"Model outputs appear to be probabilities (range: {min_val:.4f} to {max_val:.4f})")
             else:
                 probs = outputs  # Fallback
             
@@ -158,13 +156,16 @@ def evaluate_model(
 
     # Log the validation thresholds
     logging.info("\nUsing validation-optimized thresholds:")
-    optimal_thresholds = {k: v for k, v in validation_thresholds.items() 
-                         if k != "optimal_aggregation"}
-    for level, metrics in optimal_thresholds.items():
-        logging.info(f"{level.capitalize()} level: {metrics['threshold']:.3f}")
-        logging.info(f"  Sensitivity: {metrics['sensitivity']:.2f}")
-        logging.info(f"  Specificity: {metrics['specificity']:.2f}")
-        logging.info(f"  F1 Score: {metrics['f1']:.2f}")
+    optimal_thresholds = {k: v for k, v in validation_thresholds.items()
+                        if k != "optimal_aggregation"}
+    for level, level_metrics in optimal_thresholds.items():
+        if isinstance(level_metrics, dict) and 'threshold' in level_metrics:
+            logging.info(f"{level.capitalize()} level: {level_metrics['threshold']:.3f}")
+            logging.info(f"  Sensitivity: {level_metrics['sensitivity']:.2f}")
+            logging.info(f"  Specificity: {level_metrics['specificity']:.2f}")
+            logging.info(f"  F1 Score: {level_metrics['f1']:.2f}")
+        else:
+            logging.info(f"{level.capitalize()} level: Invalid threshold format: {level_metrics}")
 
     # Use validation-optimized aggregation strategy if available
     if "optimal_aggregation" in validation_thresholds:
@@ -263,7 +264,7 @@ def evaluate_model(
                 slide_preds = (slide_df['prob'] > best_threshold).astype(int)
                 logging.info(f"Applied threshold {best_threshold:.4f} to slide-level probabilities")
             else:
-                # Fallback to raw_pred if prob isn't available (which should never happen after our fixes)
+                # Fallback to raw_pred if prob isn't available (which should never happen)
                 logging.warning("No 'prob' column found in slide_df, using 'raw_pred' instead")
                 slide_preds = (slide_df['raw_pred'] > best_threshold).astype(int)
             
@@ -402,7 +403,7 @@ def evaluate_model(
             logging.info(f"  F1 Score: {test_f1:.4f}")
             logging.info(f"  AUC: {optimal_agg_auc:.4f}")
     else:
-        # FIXED: Never optimize on test data - either use validation thresholds or defaults
+        # Never optimize on test data - either use validation thresholds or defaults
         logging.info("\nNo pre-computed aggregation strategy found in validation thresholds.")
         agg_results = validation_thresholds.get("optimal_aggregation", {})
         if not agg_results:
@@ -820,7 +821,7 @@ def main():
         # Load model
         model = load_model(args.model_path, device, args.architecture)
         
-        # ===== FIXED: Always use strictly separate validation data =====
+        # Always use strictly separate validation data =====
         # Create validation data directory
         validation_dir = output_dir / "validation_thresholds"
         validation_dir.mkdir(exist_ok=True)
@@ -849,11 +850,7 @@ def main():
                 output_dir=validation_dir
             )
             
-            # Also save these thresholds for future use
-            threshold_save_path = validation_dir / "thresholds.json"
-            with open(threshold_save_path, 'w') as f:
-                json.dump(validation_thresholds, f, indent=2)
-            logging.info(f"Saved calculated validation thresholds to {threshold_save_path}")
+            logging.info(f"Validation thresholds calculated and saved to {validation_dir / 'validation_thresholds.json'}")
             
         # Now evaluate on test data using validation-optimized thresholds
         logging.info(f"Evaluating on {args.test_split} using validation-optimized thresholds...")
