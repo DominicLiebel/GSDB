@@ -15,12 +15,7 @@ from tqdm import tqdm
 from PIL import Image
 import torchvision.transforms as transforms
 import torch.serialization
-import json
 from datetime import datetime
-
-# Add numpy scalar to the list of safe globals
-torch.serialization.add_safe_globals(['numpy._core.multiarray.scalar'])
-
 
 project_root = Path(__file__).resolve().parent.parent.parent
 if str(project_root) not in sys.path:
@@ -125,6 +120,7 @@ def load_config(config_path: Path, task: str) -> dict:
         result_config['optimizer']['weight_decay'] = 1.0775930465603428e-05
         result_config['pos_weight'] = 0.654171439017536
         result_config['scheduler'] = {'enabled': True, 'name': 'CosineAnnealingLR', 'T_max': 50}
+        result_config['early_stopping'] = {'enabled': True, 'patience': 10}
     
     logging.info(f"Loaded config for {task}: {result_config}")
     return result_config
@@ -136,6 +132,17 @@ def set_seed(seed: int = 42):
     np.random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
+def create_model_for_task(task, architecture, dropout_rate, device):
+    """Create a model with a single output logit for both tasks."""
+    from src.models.architectures import HistologyClassifier
+    num_classes = 1  # Single logit output for binary classification
+    model = HistologyClassifier(
+        model_name=architecture,
+        num_classes=num_classes,
+        dropout_rate=dropout_rate
+    )
+    return model.to(device)
 
 def compute_binary_metrics(true_labels, pred_probs, threshold=0.5):
     """Compute accuracy, sensitivity, specificity, F1 score, and AUC for binary classification."""
@@ -229,8 +236,8 @@ def train_and_evaluate(args, paths):
                 # Create path for model weights
                 model_path = paths["MODELS_DIR"] / f"densenet121_{args.task}_ModelConfig_best.pt"
                 
-                # Load model
-                model = load_model(model_path, device, 'densenet121')
+                # Load model with num_classes=1 for consistency
+                model = load_model(model_path, device, 'densenet121', num_classes=1)
                 
                 # Create validation data directory
                 validation_dir = output_dir / "validation_thresholds"
@@ -275,7 +282,7 @@ def train_and_evaluate(args, paths):
                 # Create test dataset with the same transforms used in evaluate.py
                 test_dataset = HistologyDataset(
                     split=args.test_split,
-                    transform=get_transforms(is_training=False),  # Use the same transforms as evaluate.py
+                    transform=get_transforms(is_training=False),
                     task=args.task,
                     paths=paths
                 )
@@ -283,7 +290,7 @@ def train_and_evaluate(args, paths):
                 # Create test dataloader with identical parameters to evaluate.py
                 test_loader = DataLoader(
                     test_dataset,
-                    batch_size=32,  # Same batch size as evaluate.py
+                    batch_size=32,
                     shuffle=False,
                     num_workers=4,
                     pin_memory=True
@@ -309,28 +316,9 @@ def train_and_evaluate(args, paths):
                     "pos_class_weight": config.get('pos_weight', 0.5)
                 }
                 
-                # Save metrics to variant-specific directory
-                metrics_utils.save_metrics(metrics, variant_output_dir)
-                with open(variant_output_dir / f"history_{variant_name}.json", 'w') as f:
-                    json.dump(history, f, indent=2)
-                
-                # Create ROC curves
-                if 'predictions_df' in metrics:
-                    try:
-                        plot_roc_curves(
-                            metrics['predictions_df'], 
-                            task, 
-                            output_dir,
-                            metrics.get('optimal_aggregation', None),
-                            metrics  # Pass the entire metrics dictionary 
-                        )
-                        logging.info("ROC curves saved successfully")
-                    except Exception as e:
-                        logging.warning(f"Failed to create ROC curves: {str(e)}")
-                
+                # Save metrics
+                metrics_utils.save_metrics(metrics, output_dir)
                 logging.info("ModelConfig evaluation completed successfully!")
-                
-                # Return from the function early since we've completed the evaluation
                 return
                 
             except Exception as e:
@@ -354,24 +342,18 @@ def train_and_evaluate(args, paths):
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ]
         elif aug_params.get("use_model_config", False):
-            # Get base transforms from model config
             train_transform = get_transforms(is_training=True)
             
-            # Add additional augmentations if specified
             if aug_params["use_medmnist_aug"] and MEDMNISTC_AVAILABLE:
                 if isinstance(train_transform, transforms.Compose):
-                    # Convert to list for modification
                     transform_list = list(train_transform.transforms)
-                    # Add MedMNIST augmentation at the start
                     medmnist_aug = AugMedMNISTC(CORRUPTIONS_DS["pathmnist"])
                     transform_list.insert(0, MedMNISTAugTransform(medmnist_aug))
-                    # Rebuild compose
                     train_transform = transforms.Compose(transform_list)
             
             if aug_params["use_stain_color_jitter"]:
                 if isinstance(train_transform, transforms.Compose):
                     transform_list = list(train_transform.transforms)
-                    # Find position to insert StainColorJitter (after ToTensor but before Normalize)
                     to_tensor_pos = -1
                     normalize_pos = -1
                     for i, t in enumerate(transform_list):
@@ -380,12 +362,10 @@ def train_and_evaluate(args, paths):
                         if isinstance(t, transforms.Normalize):
                             normalize_pos = i
                             break
-                    
                     if to_tensor_pos >= 0 and normalize_pos > to_tensor_pos:
                         transform_list.insert(normalize_pos, StainColorJitter(sigma=0.05))
                         train_transform = transforms.Compose(transform_list)
         else:
-            # Your existing base transforms code for non-ModelConfig variants
             base_transforms = [
                 transforms.RandomResizedCrop(size=224, scale=(0.8, 1.0)),
                 transforms.RandomHorizontalFlip(),
@@ -409,13 +389,12 @@ def train_and_evaluate(args, paths):
             logging.info(f"Converting train_transform to Compose for {variant_name}. Original type: {type(train_transform)}")
             train_transform = transforms.Compose(train_transform)
 
-        val_transform = [
+        val_transform = transforms.Compose([
             transforms.Resize(224),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ]
-        val_transform = transforms.Compose(val_transform)
+        ])
 
         logging.info(f"Train transform type for {variant_name}: {type(train_transform)}")
         logging.info(f"Val transform type for {variant_name}: {type(val_transform)}")
@@ -448,26 +427,15 @@ def train_and_evaluate(args, paths):
             pin_memory=True
         )
 
-        from src.models.architectures import HistologyClassifier
-        model = HistologyClassifier(
-            model_name='densenet121',
-            num_classes=1 if args.task == 'inflammation' else 2,
-            dropout_rate=config['dropout_rate']
-        )
+        model = create_model_for_task(args.task, 'densenet121', config['dropout_rate'], device)
         if num_gpus > 1:
             model = training_utils.handle_multi_gpu_model(model)
         model = model.to(device)
 
-        # Define criterion based on task
-        if args.task == 'inflammation':
-            criterion = nn.BCEWithLogitsLoss(
-                pos_weight=torch.tensor([config['pos_weight']]).to(device)
-            )
-        elif args.task == 'tissue':
-            class_weights = torch.tensor([1.0, config['pos_weight']]).to(device)
-            criterion = nn.CrossEntropyLoss(weight=class_weights)
-        else:
-            raise ValueError(f"Unsupported task: {args.task}")
+        # Use BCEWithLogitsLoss for both tasks
+        criterion = nn.BCEWithLogitsLoss(
+            pos_weight=torch.tensor([config['pos_weight']]).to(device)
+        )
 
         # Configure optimizer and scaler
         training_components = training_utils.configure_training_components(
@@ -492,85 +460,11 @@ def train_and_evaluate(args, paths):
         history = {'train_loss': [], 'val_loss': [], 'val_f1': []}
 
         for epoch in range(config['epochs']):
-            if args.task == 'tissue':
-                # Custom train_epoch for tissue task
-                def tissue_train_epoch(model, dataloader, optimizer, criterion, scaler, device, use_amp=True):
-                    model.train()
-                    total_loss = 0.0
-                    all_preds = []
-                    all_labels = []
-                    all_raw_preds = []
-                    
-                    for inputs, labels, _ in dataloader:
-                        inputs = inputs.to(device)
-                        labels = labels.to(device).long()  # Ensure labels are long for CrossEntropyLoss
-                        
-                        optimizer.zero_grad()
-                        
-                        if use_amp:
-                            with torch.amp.autocast(device_type='cuda'):
-                                outputs = model(inputs)
-                                loss = criterion(outputs, labels)
-                            scaler.scale(loss).backward()
-                            scaler.step(optimizer)
-                            scaler.update()
-                        else:
-                            outputs = model(inputs)
-                            loss = criterion(outputs, labels)
-                            loss.backward()
-                            optimizer.step()
-                        
-                        # Store predictions and labels
-                        preds = torch.argmax(outputs, dim=1)
-                        probs = torch.softmax(outputs, dim=1)[:, 1]
-                        all_preds.extend(preds.detach().cpu().numpy())
-                        all_labels.extend(labels.cpu().numpy())
-                        all_raw_preds.extend(probs.detach().cpu().numpy())
-                        
-                        total_loss += loss.item()
-                    
-                    metrics = metrics_utils.calculate_basic_metrics(all_labels, all_preds, all_raw_preds)
-                    metrics['loss'] = total_loss / len(dataloader)
-                    return metrics
-
-                # Custom validate for tissue task
-                def tissue_validate(model, dataloader, criterion, device):
-                    model.eval()
-                    total_loss = 0.0
-                    all_preds = []
-                    all_labels = []
-                    all_raw_preds = []
-                    
-                    with torch.no_grad():
-                        for inputs, labels, _ in dataloader:
-                            inputs = inputs.to(device)
-                            labels = labels.to(device).long()
-                            outputs = model(inputs)
-                            loss = criterion(outputs, labels)
-                            
-                            preds = torch.argmax(outputs, dim=1)
-                            probs = torch.softmax(outputs, dim=1)[:, 1]
-                            all_preds.extend(preds.cpu().numpy())
-                            all_labels.extend(labels.cpu().numpy())
-                            all_raw_preds.extend(probs.cpu().numpy())
-                            
-                            total_loss += loss.item()
-                    
-                    metrics = metrics_utils.calculate_basic_metrics(all_labels, all_preds, all_raw_preds)
-                    metrics['loss'] = total_loss / len(dataloader)
-                    return metrics
-                    
-
-                train_metrics = tissue_train_epoch(
-                    model, train_loader, optimizer, criterion, scaler, device, use_amp=True
-                )
-                val_metrics = tissue_validate(model, val_loader, criterion, device)
-            else:
-                # Use standard training_utils functions for inflammation
-                train_metrics = training_utils.train_epoch(
-                    model, train_loader, optimizer, criterion, scaler, device, use_amp=True
-                )
-                val_metrics = training_utils.validate(model, val_loader, criterion, device)
+            # Use standard training_utils functions for both tasks
+            train_metrics = training_utils.train_epoch(
+                model, train_loader, optimizer, criterion, scaler, device, use_amp=True
+            )
+            val_metrics = training_utils.validate(model, val_loader, criterion, device)
 
             history['train_loss'].append(train_metrics['loss'])
             history['val_loss'].append(val_metrics['loss'])
@@ -595,12 +489,30 @@ def train_and_evaluate(args, paths):
             if scheduler:
                 scheduler.step()
 
-        # Load best model using the same approach as evaluate.py
-        loaded_data = load_model(model_path, device, architecture='densenet121')
-        if isinstance(loaded_data, dict) and 'model' in loaded_data:
-            model = loaded_data['model']
-        else:
-            model = loaded_data
+        # Create a fresh model with a single output logit
+        model = create_model_for_task(args.task, 'densenet121', config['dropout_rate'], device)
+
+        # Load the state dict manually
+        try:
+            checkpoint = torch.load(model_path, map_location=device, weights_only=False)
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                state_dict = checkpoint['model_state_dict']
+            else:
+                state_dict = checkpoint
+                
+            if any(k.startswith('module.') for k in state_dict.keys()):
+                logging.info("Detected DataParallel saved model, removing 'module.' prefix")
+                from collections import OrderedDict
+                new_state_dict = OrderedDict()
+                for k, v in state_dict.items():
+                    name = k[7:] if k.startswith('module.') else k
+                    new_state_dict[name] = v
+                state_dict = new_state_dict
+                
+            model.load_state_dict(state_dict, strict=False)
+        except Exception as e:
+            logging.error(f"Error loading model: {str(e)}")
+            raise
         if num_gpus > 1:
             model = training_utils.handle_multi_gpu_model(model)
         model = model.to(device)
@@ -611,7 +523,6 @@ def train_and_evaluate(args, paths):
         else:  # tissue task
             threshold_path = Path('/mnt/data/dliebel/2024_dliebel/results/evaluations/tissue_scanner1_densenet121_20250321_201315/validation_thresholds/validation_thresholds.json')
 
-        # Load the pre-computed thresholds
         if threshold_path.exists():
             try:
                 with open(threshold_path, 'r') as f:
@@ -619,7 +530,6 @@ def train_and_evaluate(args, paths):
                 logging.info(f"Loaded pre-computed validation thresholds from {threshold_path}")
             except Exception as e:
                 logging.error(f"Error loading threshold file: {str(e)}")
-                # Fall back to default thresholds
                 validation_thresholds = {
                     'tile': {'threshold': 0.616, 'sensitivity': 0.8, 'specificity': 0.8, 'f1': 0.8},
                     'slide' if args.task == 'inflammation' else 'particle': {
@@ -632,7 +542,6 @@ def train_and_evaluate(args, paths):
                 logging.warning("Using default thresholds due to loading error.")
         else:
             logging.warning(f"Threshold file not found at {threshold_path}. Using default thresholds.")
-            # Use default thresholds
             validation_thresholds = {
                 'tile': {'threshold': 0.616, 'sensitivity': 0.8, 'specificity': 0.8, 'f1': 0.8},
                 'slide' if args.task == 'inflammation' else 'particle': {
@@ -643,7 +552,7 @@ def train_and_evaluate(args, paths):
                 }
             }
 
-        # Evaluate model using the single evaluation method from evaluate.py
+        # Evaluate model using evaluate.py
         metrics = evaluate.evaluate_model(
             model=model,
             data_loader=test_loader,
@@ -657,77 +566,57 @@ def train_and_evaluate(args, paths):
         # Extract predictions dataframe for plotting
         if 'predictions_df' in metrics:
             df = metrics['predictions_df']
-            
-            # Get true labels and prediction probabilities for tile-level ROC curve
             true_labels = df['label'].values
             pred_probs = df['prob'].values if 'prob' in df.columns else df['pred_prob'].values
             
-            # Compute ROC curves for tile-level predictions
             tile_fpr, tile_tpr, _ = roc_curve(true_labels, pred_probs)
-            
-            # Use the AUC values directly from metrics instead of recalculating
             tile_auc = metrics.get('tile_auc', metrics.get('tile_auroc', 0))
             roc_tile_all[variant_name] = (tile_fpr, tile_tpr, tile_auc)
             
-            # Get slide/particle-level predictions directly from metrics
             if args.task == 'inflammation':
-                # Extract slide-level metrics
                 agg_level = 'slide'
                 agg_auc = metrics.get('slide_auc', metrics.get('slide_auroc', 0))
-                
-                # Compute slide-level ROC curve from aggregated predictions in metrics
                 if 'slide_df' in metrics:
                     slide_df = metrics['slide_df']
                     agg_true = slide_df['label'].values
                     agg_probs = slide_df['prob'].values if 'prob' in slide_df.columns else slide_df['pred_prob'].values
                     agg_fpr, agg_tpr, _ = roc_curve(agg_true, agg_probs)
                 else:
-                    # Fallback to aggregating from the dataframe if slide_df not available
                     groups = df['slide_name'].values
                     unique_groups = np.unique(groups)
                     agg_true, agg_probs = [], []
                     for g in unique_groups:
                         idx = np.where(groups == g)[0]
                         agg_true.append(mode(true_labels[idx])[0])
-                        # Use aggregation method from evaluate.py
-                        agg_probs.append(np.mean(pred_probs[idx]))  # inflammation uses mean
+                        agg_probs.append(np.mean(pred_probs[idx]))
                     agg_true, agg_probs = np.array(agg_true), np.array(agg_probs)
                     agg_fpr, agg_tpr, _ = roc_curve(agg_true, agg_probs)
             else:  # tissue task
-                # Extract particle-level metrics
                 agg_level = 'particle'
                 agg_auc = metrics.get('particle_auc', metrics.get('particle_auroc', 0))
-                
-                # Compute particle-level ROC curve from aggregated predictions in metrics
                 if 'particle_df' in metrics:
                     particle_df = metrics['particle_df']
                     agg_true = particle_df['label'].values
                     agg_probs = particle_df['prob'].values if 'prob' in particle_df.columns else particle_df['pred_prob'].values
                     agg_fpr, agg_tpr, _ = roc_curve(agg_true, agg_probs)
                 else:
-                    # Fallback to aggregating from the dataframe if particle_df not available
                     groups = df['particle_id'].values if 'particle_id' in df.columns else df['slide_name'].values
                     unique_groups = np.unique(groups)
                     agg_true, agg_probs = [], []
                     for g in unique_groups:
                         idx = np.where(groups == g)[0]
                         agg_true.append(mode(true_labels[idx])[0])
-                        # Use aggregation method from evaluate.py
-                        agg_probs.append(np.median(pred_probs[idx]))  # tissue uses median
+                        agg_probs.append(np.median(pred_probs[idx]))
                     agg_true, agg_probs = np.array(agg_true), np.array(agg_probs)
                     agg_fpr, agg_tpr, _ = roc_curve(agg_true, agg_probs)
             
             roc_agg_all[variant_name] = (agg_fpr, agg_tpr, agg_auc)
         else:
-            # Fallback if predictions_df is not available in metrics
             logging.warning(f"predictions_df not found in metrics for {variant_name}. Using default ROC curves.")
-            # Create empty placeholder ROC curves
             roc_tile_all[variant_name] = (np.array([0, 1]), np.array([0, 1]), 0.5)
             roc_agg_all[variant_name] = (np.array([0, 1]), np.array([0, 1]), 0.5)
         
         level = "Slide" if args.task == 'inflammation' else "Particle"
-        
-        # Define aggregation method name based on task
         agg_method_name = "Mean" if args.task == 'inflammation' else "Median"
 
         # Individual plots for this variant
@@ -742,29 +631,22 @@ def train_and_evaluate(args, paths):
             save_path=str(paths["FIGURES_DIR"] / f"roc_{args.task}_{level.lower()}_{args.test_split}_{variant_name}.png")
         )
         
-        # Save metrics to disk - ensure we use consistent metrics for ROC curves and text file results
-        metrics_utils.save_metrics(metrics, paths["EXPERIMENTS_DIR"])
-        with open(paths["EXPERIMENTS_DIR"] / f"history_{variant_name}.json", 'w') as f:
+        # Save metrics
+        metrics_utils.save_metrics(metrics, variant_output_dir)
+        with open(variant_output_dir / f"history_{variant_name}.json", 'w') as f:
             json.dump(history, f, indent=2)
             
-        # Extract metrics for results file - only use metrics from evaluate.evaluate_model
         tile_metrics = {k: v for k, v in metrics.items() if k.startswith('tile_') and isinstance(v, (int, float, np.floating))}
-        
-        # IMPORTANT: Extract test confusion matrix metrics directly if available
-        # This ensures all files report the same values: statistics.json, metrics_summary.txt, and results_*.txt
         agg_metrics = {}
         use_test_cm = False
         
         if args.task == 'inflammation':
             agg_prefix = 'slide_'
             level_name = "SLIDE"
-            
-            # First try to use the test confusion matrix directly (most accurate)
             if 'optimal_aggregation' in metrics and isinstance(metrics['optimal_aggregation'], dict):
                 if 'test_confusion_matrix' in metrics['optimal_aggregation']:
                     test_cm = metrics['optimal_aggregation']['test_confusion_matrix']
                     if isinstance(test_cm, dict):
-                        # Map the test confusion matrix metrics to slide metrics format
                         agg_metrics = {
                             'slide_accuracy': test_cm.get('accuracy', 0),
                             'slide_sensitivity': test_cm.get('sensitivity', 0),
@@ -773,22 +655,16 @@ def train_and_evaluate(args, paths):
                             'slide_auroc': test_cm.get('auc', 0)
                         }
                         use_test_cm = True
-                        logging.info("Using test confusion matrix metrics for results file - ensures consistency")
-            
-            # Fall back to metrics dict if test confusion matrix wasn't available
+                        logging.info("Using test confusion matrix metrics for results file")
             if not use_test_cm:
                 agg_metrics = {k: v for k, v in metrics.items() if k.startswith(agg_prefix) and isinstance(v, (int, float, np.floating))}
-                
         else:  # tissue task
             agg_prefix = 'particle_'
             level_name = "PARTICLE"
-            
-            # First try to use the test confusion matrix directly (most accurate)
             if 'optimal_aggregation' in metrics and isinstance(metrics['optimal_aggregation'], dict):
                 if 'test_confusion_matrix' in metrics['optimal_aggregation']:
                     test_cm = metrics['optimal_aggregation']['test_confusion_matrix']
                     if isinstance(test_cm, dict):
-                        # Map the test confusion matrix metrics to particle metrics format
                         agg_metrics = {
                             'particle_accuracy': test_cm.get('accuracy', 0),
                             'particle_sensitivity': test_cm.get('sensitivity', 0),
@@ -797,46 +673,34 @@ def train_and_evaluate(args, paths):
                             'particle_auroc': test_cm.get('auc', 0)
                         }
                         use_test_cm = True
-                        logging.info("Using test confusion matrix metrics for results file - ensures consistency")
-            
-            # Fall back to metrics dict if test confusion matrix wasn't available
+                        logging.info("Using test confusion matrix metrics for results file")
             if not use_test_cm:
                 agg_metrics = {k: v for k, v in metrics.items() if k.startswith(agg_prefix) and isinstance(v, (int, float, np.floating))}
         
-        # Write results to text file - now with consistent metrics across all files
-        with open(paths["EXPERIMENTS_DIR"] / f"results_{args.task}_{variant_name}_{args.test_split}.txt", 'w') as f:
+        with open(variant_output_dir / f"results_{args.task}_{variant_name}_{args.test_split}.txt", 'w') as f:
             f.write(f"{args.task.upper()} RESULTS - Variant: {variant_name} - Scanner: {args.test_split}\n")
             f.write("========================================\n\n")
             f.write(f"TEST DATASET - TILE LEVEL METRICS\n")
             f.write("---------------------------------------------\n")
             for k, v in tile_metrics.items():
                 f.write(f"{k.replace('tile_', '').capitalize()}: {v:.3f}\n")
-            
             f.write(f"\nTEST DATASET - {level_name}-LEVEL METRICS\n")
             f.write("---------------------------------------------\n")
             for k, v in agg_metrics.items():
                 metric_name = k.replace(agg_prefix, '')
                 f.write(f"{metric_name.capitalize()}: {v:.3f}\n")
-                
-            # Add a note about the source of the metrics if we're using test_confusion_matrix
             if use_test_cm:
                 f.write("\nNote: These metrics are calculated from the test confusion matrix\n")
                 f.write("after applying validation-optimized threshold and aggregation.\n")
 
-    # This block is OUTSIDE the variant loop
     if not args.variant and len(augmentation_variants) > 1:
-        # Comparison plots for all variants
         level = "Slide" if args.task == 'inflammation' else "Particle"
-        
-        # Tile-level comparison
         plot_roc_curves(
             {variant_name: roc_data for variant_name, roc_data in roc_tile_all.items()},
             title=f"{args.task.capitalize()} - Tile-Level ROC Comparison ({scanner_name}) - All Variants",
             save_path=str(paths["FIGURES_DIR"] / f"roc_{args.task}_tile_{args.test_split}_all_variants.png")
         )
         logging.info(f"Tile-level ROC comparison plot saved to {paths['FIGURES_DIR'] / f'roc_{args.task}_tile_{args.test_split}_all_variants.png'}")
-        
-        # Aggregated level comparison
         plot_roc_curves(
             {variant_name: roc_data for variant_name, roc_data in roc_agg_all.items()},
             title=f"{args.task.capitalize()} - {level}-Level ROC Comparison ({scanner_name}) - All Variants",
