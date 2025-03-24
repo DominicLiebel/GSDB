@@ -202,57 +202,60 @@ The model implementations can be found in `src/models/architectures/`.
 ## Results
 
 ### Antrum/Corpus Classification Results - Dataset: HE stained, Test on Scanner1
-
 For classification of slides from the same scanner as the train and validation set (Scanner1) the best tissue models achieve:
 
-| Model | Test Accuracy | Test F1 | Test AUC |
-|-------|---------------|---------|----------|
-| ResNet18 | xx.x% | 0.xx | 0.xx |
-| Densenet121 | xx.x% | 0.xx | 0.xx |
-| Densenet169 | xx.x% | 0.xx | 0.xx |
-| ConvNeXt Large | xx.x% | 0.xx | 0.xx |
-| Swin V2 B | x.x% | 0.xx | 0.xx |
-| GigaPath | x.x% | 0.xx | 0.xx |
+| Model          | Test Accuracy | Test F1 | Test AUC |
+|----------------|---------------|---------|----------|
+| ConvNeXt Large | 88.71%        | 0.8827  | 0.9183   |
+| Densenet121    | 87.07%        | 0.8646  | 0.9052   |
+| Densenet169    | 84.23%        | 0.8389  | 0.8879   |
+| GigaPath       | 84.30%        | 0.8262  | 0.8963   |
+| ResNet18       | 85.20%        | 0.8491  | 0.8920   |
+| Swin V2 B      | 78.41%        | 0.7569  | 0.8455   |
+
 
 
 ### Non/Inflamed Classification Results - Dataset: HE stained, Test on Scanner1
 
 For classification of slides from the same scanner as the train and validation set (Scanner1) the best inflammation models achieve:
 
-| Model | Test Accuracy | Test F1 | Test AUC |
-|-------|---------------|---------|----------|
-| ResNet18 | xx.x% | 0.xx | 0.xx |
-| Densenet121 | xx.x% | 0.xx | 0.xx |
-| Densenet169 | xx.x% | 0.xx | 0.xx |
-| ConvNeXt Large | xx.x% | 0.xx | 0.xx |
-| Swin V2 B | x.x% | 0.xx | 0.xx |
-| GigaPath | x.x% | 0.xx | 0.xx |
+| Model          | Test Accuracy | Test F1 | Test AUC |
+|----------------|---------------|---------|----------|
+| ConvNeXt Large | 83.73%        | 0.8737  | 0.9193   |
+| Densenet121    | 76.93%        | 0.7989  | 0.9120   |
+| Densenet169    | 82.76%        | 0.8644  | 0.9136   |
+| GigaPath       | 80.44%        | 0.8411  | 0.9029   |
+| ResNet18       | 81.70%        | 0.8539  | 0.9043   |
+| Swin V2 B      | 75.88%        | 0.8052  | 0.8363   |
+
 
 ### Antrum/Corpus Generalizability Classification Results - Dataset: HE stained, Test on Scanner2
 
 For classification of slides from a different scanner (Scanner2) as the train and validation set (Scanner1) the best tissue models achieve:
 
-| Model | Test Accuracy | Test F1 | Test AUC |
-|-------|---------------|---------|----------|
-| ResNet18 | xx.x% | 0.xx | 0.xx |
-| Densenet121 | xx.x% | 0.xx | 0.xx |
-| Densenet169 | xx.x% | 0.xx | 0.xx |
-| ConvNeXt Large | xx.x% | 0.xx | 0.xx |
-| Swin V2 B | x.x% | 0.xx | 0.xx |
-| GigaPath | x.x% | 0.xx | 0.xx |
+| Model          | Test Accuracy | Test F1 | Test AUC |
+|----------------|---------------|---------|----------|
+| ConvNeXt Large | 79.80%        | 0.7177  | 0.9491   |
+| Densenet121    | 80.40%        | 0.7370  | 0.9381   |
+| Densenet169    | 66.65%        | 0.4678  | 0.8687   |
+| GigaPath       | 79.92%        | 0.7233  | 0.9626   |
+| ResNet18       | 66.18%        | 0.4233  | 0.8748   |
+| Swin V2 B      | 74.47%        | 0.6365  | 0.8801   |
+
 
 ### Non/Inflamed Generalizability Classification Results - Dataset: HE stained, Test on Scanner2
 
 For classification of slides from a different scanner (Scanner2) as the train and validation set (Scanner1) the best inflammation models achieve:
 
-| Model | Test Accuracy | Test F1 | Test AUC |
-|-------|---------------|---------|----------|
-| ResNet18 | xx.x% | 0.xx | 0.xx |
-| Densenet121 | xx.x% | 0.xx | 0.xx |
-| Densenet169 | xx.x% | 0.xx | 0.xx |
-| ConvNeXt Large | xx.x% | 0.xx | 0.xx |
-| Swin V2 B | x.x% | 0.xx | 0.xx |
-| GigaPath | x.x% | 0.xx | 0.xx |
+| Model          | Test Accuracy | Test F1 | Test AUC |
+|----------------|---------------|---------|----------|
+| ConvNeXt Large | 68.11%        | 0.8090  | 0.6797   |
+| Densenet121    | 71.12%        | 0.8153  | 0.7631   |
+| Densenet169    | 60.51%        | 0.6963  | 0.6288   |
+| GigaPath       | 70.95%        | 0.8097  | 0.7029   |
+| ResNet18       | 64.75%        | 0.7781  | 0.6185   |
+| Swin V2 B      | 67.78%        | 0.7994  | 0.6987   |
+
 
 For detailed performance metrics, see `results/evaluations` directory after running evaluation.
 
